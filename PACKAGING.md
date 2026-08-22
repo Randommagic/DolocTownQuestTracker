@@ -118,6 +118,32 @@ MODS\
 확인할 것.** 써준다면 그 id를 `workshop/workshop.json`에 옮겨 적어야 다음 갱신이
 같은 항목으로 올라간다.
 
+### 언어별 이름·설명은 세 개보다 많이 넣어도 된다
+
+`localized_name` / `localized_description`에 `koreana`를 넣어도 **게임이 지우지 않는다.**
+`ModManager.TryMigrateData` → `EnsureLocalizedManifestField`의 IL을 확인한 결과:
+
+- `EnsureLocalizedManifestField`는 `ModManifest.GetUploadL10nIds()`가 주는
+  `schinese`/`tchinese`/`english`가 **없을 때만 채워 넣는다.** `Remove` 호출이 없다
+- 실제로 지우는 `RemoveLegacyManifestField`는 `workshopId` / `workshop_id` / `priority`
+  세 필드에만 쓰인다. 옛 형식의 워크샵 id를 `workshop.json`으로 옮기는 마이그레이션이며,
+  우리는 그 필드를 쓰지 않는다
+- 즉 `info.json`을 다시 쓰는 건 옮길 게 있을 때뿐이고, 우리 파일은 해당 사항이 없다
+
+표시 시점의 조회는 `ModManifest.get_Title` → `GetL10nText(현재 언어의 SteamL10nId, 폴백, 사전)`
+이라 그냥 Dictionary 룩업이다. 그래서 업로더가 편집해주지 않는 키도 표시된다.
+값이 빈 문자열이면 `IsNullOrEmpty` 검사에 걸려 최상위 `name`/`description`으로 폴백한다.
+
+실증: 게임이 로컬 폴더를 여러 번 스캔·로드한 뒤에도 `koreana`가 그대로 남아 있었고,
+미니맵 모드(`3782262739`)의 **업로드된** 사본에도 `koreana`와 `japanese`가 살아 있다.
+
+### 설치 안내는 항목 페이지에 둔다
+
+`info.json`의 `description`은 한 문장으로 짧게 유지하고("… Requires DTMAPI."),
+구독 → Mods 화면에서 활성화 → 재시작 단계는 **Steam 창작마당 항목 페이지 설명**에 적는다
+(웹에서 따로 편집한다). `info.json`을 길게 만들지 않으려는 선택이다.
+미니맵 모드는 반대로 `localized_description`에 5단계를 다 넣었으니, 그쪽 방식이 필요하면 참고할 것.
+
 ## 구독자가 하는 일
 
 1. **DTMAPI**(`3743016467`) 구독 → `1_install_dtmapi.bat` 1회 실행 (BepInEx가 함께 깔린다)
@@ -136,6 +162,5 @@ MODS\
 - [ ] **최초 업로드** — 위 "업로드 절차" 참고.
       발급된 `workshop_id`를 `workshop/workshop.json`에 적어야 이후 갱신이
       같은 항목으로 올라간다
-- [ ] **설명 문구 다듬기** — `info.json`의 `description`은 초안이다.
-      한국어 사용자가 주 대상이면 `localized_description`에 한국어 항목이
-      들어가는지 확인할 것 (다른 항목들은 `schinese`/`english`/`tchinese`만 쓴다)
+- [ ] **항목 페이지 설명 작성** — 구독 → Mods 화면 활성화 → 재시작 단계.
+      `info.json`이 아니라 Steam 쪽 설명에 적는다 (위 "설치 안내는 항목 페이지에 둔다")
