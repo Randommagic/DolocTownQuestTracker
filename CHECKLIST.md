@@ -43,8 +43,7 @@
 - [x] **워크샵 패키지 골격** — `workshop/` + `package.ps1`.
       게임에 설치된 창작마당 항목들을 뜯어 형식 확인
       (`info.json` / `workshop.json` / `icon.png` / `preview.png` / `Content/`)
-- [ ] **아이콘·미리보기 이미지** — `workshop/icon.png`, `workshop/preview.png`.
-      `package.ps1`이 없으면 `TODO`로 알려줌
+- [x] **아이콘·미리보기 이미지** — `workshop/icon.png`, `workshop/preview.png` 추가 완료
 - [ ] **최초 업로드 후 `workshop_id` 기록** — 업로드하면 발급되는 id를
       `workshop/workshop.json`에 적어야 이후 갱신이 같은 항목으로 올라감
 - [ ] **BepInEx 동반 배포 여부 결정** — 현재는 DLL만 배포하고 DTMAPI 구독을
