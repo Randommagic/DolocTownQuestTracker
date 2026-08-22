@@ -46,7 +46,7 @@ namespace DolocTownQuestTracker
 
         /// <summary>
         /// The loaded save's slot number and identity. False before a save is open, which is
-        /// most of the plugin's startup.
+        /// most of the mod's startup.
         /// </summary>
         internal static bool TryCurrent(out int slot, out long save)
         {

@@ -18,27 +18,54 @@
 └─ Content/         실제 배포물
 ```
 
-## 이 모드의 배포 방식
+## 이 모드의 배포 방식 — DTMAPI CodeMod
 
-순수 BepInEx 플러그인이므로 `Content/` 안의 DLL이 **자동으로 로드되지는 않는다.**
-구독자는 DLL을 `BepInEx\plugins\`로 복사해야 한다.
+**구독만 하면 설치가 끝난다.** DLL을 손으로 옮길 필요가 없다.
 
-DTMAPI의 `CodeMod` 경로(`manifest.json` + `EntryDll` + `EntryType`)는 DTMAPI 전용
-진입점 클래스를 요구하므로 해당되지 않는다. 이 모드는 `BepInPlugin` 속성을 가진
-BepInEx 플러그인이고, BepInEx가 직접 로드한다.
-
-따라서 `Content/`는 이렇게 구성된다:
+DTMAPI는 시작 시 구독 폴더와 로컬 `MODS` 폴더를 훑어 `Content/DTMAPI/manifest.json`을 찾고,
+거기 적힌 `EntryDll`을 로드해 `EntryType`을 인스턴스화한다. 그래서 `Content/`는 이렇게 구성된다:
 
 ```
 Content/
-├─ DolocTownQuestTracker.dll   플러그인
-└─ INSTALL.txt                 복사 위치 안내 (구독자용이므로 영어)
+└─ DTMAPI/
+   ├─ manifest.json              DTMAPI가 읽는 모드 선언
+   ├─ dtmapi-package.json        {"uniqueId", "version"} 패키지 마커
+   └─ DolocTownQuestTracker.dll  진입점 DolocTownQuestTracker.ModEntry
 ```
+
+`INSTALL.txt`는 없다. 설치 절차 자체가 없어졌다.
+
+### DTMAPI 0.6.1에서 확인한 규칙
+
+`DTMAPI.Core.dll`의 `ManagedModClassifier`를 뜯어 확인한 것들이다. 어기면 모드가 로드되지 않는다.
+
+- `Type`은 **정확히** `CodeMod` 또는 `ContentPack`. 다른 값은 `unknown-manifest-type`으로 거부된다.
+- `CodeModKind`는 **적지 않는다.** 생략하면 `LegacyNativeCodeMod`로 분류되어
+  `Assembly-CSharp` / `0Harmony` / `UnityEngine*` / `Unity.*` 참조가 허용된다.
+  `"Strict"`를 적으면 그 참조들이 전부 금지되고, `"Advanced"`는 서명된 reference receipt를 요구한다.
+- manifest 필드 이름은 **대소문자를 구분**하고 각 필드는 정확히 한 번만 나와야 한다
+  (`RejectMisCasedOrDuplicateWireField`).
+- 어셈블리 이름이 `DTMAPI.*` 중 하나면 `impersonates a native/runtime assembly`로 거부된다.
+- 패키지 폴더에 게임·플랫폼 DLL 사본을 넣으면
+  `carries a copied platform/game assembly`로 거부된다. 우리 DLL 하나만 넣는다.
+- `EntryDll`은 패키지 루트 하위의 상대경로여야 하고 확장자는 `.dll`이어야 한다.
+- `TargetFramework`가 정확히 netstandard2.0이어야 한다는 검사는 **Advanced 전용**이다
+  (`ValidateCodeModAssemblyBoundary`에서 advanced 인자가 false면 건너뛴다).
+  참고로 창작마당의 다른 CodeMod(Quality of Doloc)는 netstandard 2.1로 빌드돼 있고 정상 동작한다.
+
+`package.ps1`이 `info.json` / `manifest.json` / `dtmapi-package.json` / `PluginInfo.cs`의
+버전과 UniqueID가 어긋나면 빌드를 세운다. 네 곳이 서로 다른 독자를 상대하므로 손으로 맞추면 반드시 어긋난다.
+
+### 설정 파일
+
+`<게임폴더>\DTMAPI\config\Randommagic.DolocTownQuestTracker.json`.
+
+DTMAPI가 `DataContractJsonSerializer`로 읽고 쓴다. 그래서 `ModConfig`는 public 클래스에
+public getter/setter만 쓴다. 사용자는 인게임 DTMAPI 설정 페이지에서 바꾸면 되고 파일을 열 이유가 없다.
 
 ## 업로드 절차
 
-게임에 **자체 모드 업로더가 내장**되어 있다. 별도 Steam 도구(SteamCmd, Workshop Uploader)는
-필요 없다. `Assembly-CSharp.dll`의 문자열에서 확인한 기능이다.
+게임에 **자체 모드 업로더가 내장**되어 있다. 별도 Steam 도구(SteamCmd, Workshop Uploader)는 필요 없다.
 
 ### 로컬 모드 폴더
 
@@ -48,7 +75,8 @@ Content/
 %USERPROFILE%\AppData\LocalLow\RedSawGames\DolocTown\MODS\
 ```
 
-`package.ps1`이 만든 `dist\workshop\`을 이 아래에 폴더째로 복사한다.
+`build.ps1`이 `-NoDeploy` 없이 돌면 여기에 바로 배치한다. 업로드 직전에는 `package.ps1`이 만든
+`dist\workshop\`을 폴더째로 복사한다.
 
 ```
 MODS\
@@ -58,8 +86,10 @@ MODS\
    ├─ icon.png
    ├─ preview.png
    └─ Content\
-      ├─ DolocTownQuestTracker.dll
-      └─ INSTALL.txt
+      └─ DTMAPI\
+         ├─ manifest.json
+         ├─ dtmapi-package.json
+         └─ DolocTownQuestTracker.dll
 ```
 
 ### 게임 내 조작
@@ -88,27 +118,24 @@ MODS\
 확인할 것.** 써준다면 그 id를 `workshop/workshop.json`에 옮겨 적어야 다음 갱신이
 같은 항목으로 올라간다.
 
-### 이 모드 특유의 주의점
+## 구독자가 하는 일
 
-순수 BepInEx 플러그인이므로 게임의 모드 목록에서 **켜기/끄기가 실제로 동작하지 않을
-가능성이 높다.** BepInEx가 `BepInEx\plugins\`에서 직접 로드하므로 게임의 모드 관리와
-무관하다. 창작마당 항목은 파일을 전달하는 수단일 뿐이고, 실제 설치는 구독자가
-`INSTALL.txt`대로 DLL을 복사해야 이뤄진다.
+1. **DTMAPI**(`3743016467`) 구독 → `1_install_dtmapi.bat` 1회 실행 (BepInEx가 함께 깔린다)
+2. 이 항목 구독
+3. 타이틀 화면 Mods 페이지에서 **켜기** — 새로 구독한 항목은 꺼진 상태로 등록된다
+   (`ModManager.TryLoadMod`이 `enabled=false, priority=-1`로 만든다)
+4. 게임 재시작 — DTMAPI는 시작 시점에만 CodeMod을 로드한다
+   (`restart Doloc Town to cold-load it`)
+
+1번은 DTMAPI 쪽 사정이고 우리가 줄일 수 없다. 항목 설명에 선행 조건으로 적어야 한다.
 
 ## 남은 수작업
 
 `package.ps1`이 만들어주지 못하는 것들:
 
-- [ ] **`icon.png` / `preview.png`** — 직접 만들어 `workshop/`에 넣어야 한다.
-      다른 항목들의 크기를 참고할 것
 - [ ] **최초 업로드** — 위 "업로드 절차" 참고.
       발급된 `workshop_id`를 `workshop/workshop.json`에 적어야 이후 갱신이
       같은 항목으로 올라간다
 - [ ] **설명 문구 다듬기** — `info.json`의 `description`은 초안이다.
       한국어 사용자가 주 대상이면 `localized_description`에 한국어 항목이
       들어가는지 확인할 것 (다른 항목들은 `schinese`/`english`/`tchinese`만 쓴다)
-
-## 전제 조건
-
-BepInEx가 설치되어 있어야 한다. 창작마당의 **DTMAPI** 항목을 구독하면 BepInEx가
-함께 설치되므로, 항목 설명에 이를 선행 조건으로 적는 것이 좋다.

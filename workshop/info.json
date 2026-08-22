@@ -1,20 +1,24 @@
 {
   "name": "Quest Tracker",
-  "author": "randommagic",
+  "author": "Randommagic",
   "version": "1.0.0",
-  "description": "Shows the items still needed for faction missions and seed research, on the game screen next to the built-in mission tips.",
+  "description": "Shows the items needed for faction missions and seed research, below the game's built-in quest display. Requires DTMAPI.",
   "tags": [
     "Mod",
-    "QoL"
+    "QoL",
+    "UI",
+    "DTMAPI"
   ],
   "localized_name": {
+    "koreana": "퀘스트 트래커",
     "english": "Quest Tracker",
-    "schinese": "",
-    "tchinese": ""
+    "schinese": "任务追踪器",
+    "tchinese": "任務追蹤器"
   },
   "localized_description": {
-    "english": "Shows the items still needed for faction missions and seed research, on the game screen next to the built-in mission tips.",
-    "schinese": "",
-    "tchinese": ""
+    "koreana": "세력 임무와 씨앗 연구에 필요한 아이템을 게임 화면의 기본 퀘스트 표시 하단에 보여줍니다. DTMAPI가 필요합니다.",
+    "english": "Shows the items needed for faction missions and seed research, below the game's built-in quest display. Requires DTMAPI.",
+    "schinese": "在游戏画面自带的任务提示下方，显示势力任务和种子研究所需的道具。需要 DTMAPI。",
+    "tchinese": "在遊戲畫面自帶的任務提示下方，顯示勢力任務和種子研究所需的道具。需要 DTMAPI。"
   }
 }
