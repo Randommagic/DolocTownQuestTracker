@@ -18,6 +18,40 @@
 └─ Content/         실제 배포물
 ```
 
+### 스팀 페이지의 제목·설명은 최초 생성 때 한 번만 올라간다
+
+`SteamWorkshopUploader.UploadUpdate(workshopId, mod, newCreate)`의 IL:
+
+```csharp
+pendingL10nTexts.Clear();
+if (newCreate) { ... BuildTextsToUpload(mod) ... }   // brfalse로 건너뛴다
+SetItemContent / SetItemPreview / SetItemTags
+SubmitItemUpdate("Update mod")
+```
+
+즉 **갱신 업로드는 콘텐츠·미리보기·태그만 올린다.** 제목과 설명은 항목이 처음 만들어질 때만
+전송되고, 그 뒤에는 게임이 절대 건드리지 않는다. `info.json`의 이름을 바꿔 갱신해도
+창작마당 페이지 제목은 그대로다 — **스팀 페이지에서 손으로 고쳐야 한다.**
+
+증상으로는 이렇게 보인다. `Player.log`에 `continue uploading localized texts` 바로 뒤에
+`Workshop upload success!`가 오고 `Submit workshop localized text: ...` 줄이 하나도 없다.
+큐가 비어 있었다는 뜻이다.
+
+### 어떤 언어가 올라가는가 (최초 생성 시)
+
+`BuildTextsToUpload`는 두 단계로 모은다.
+
+1. **현재 게임 언어**의 `SteamL10nId` — `GetTitleToUpload(id, useFallback: true)`
+2. `GetUploadL10nIds()` = `schinese` / `tchinese` / `english` — `useFallback: **false**`
+
+그래서 최초 업로드 때 `koreana`가 함께 올라간 것은 그 순간 게임이 한국어로 돌고 있었기
+때문이다. `koreana`는 `GetUploadL10nIds()`에 없다.
+
+**빈 제목은 그 언어를 통째로 건너뛴다** (`TryAddText` → `Skip workshop localization '...'
+because title is empty`). 2단계는 `useFallback: false`라 폴백도 없다. 그러므로
+`localized_name`의 `schinese`/`tchinese`를 빈 문자열로 두면 공들여 쓴 중국어 **설명까지**
+올라가지 않는다. 이름을 영어로 통일하더라도 값은 채워 둘 것.
+
 ## 창작마당 항목
 
 **발행됨: `3787985009`** (2026-08-22 최초 업로드)
