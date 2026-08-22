@@ -1,5 +1,5 @@
 {
-  "name": "Quest Tracker",
+  "name": "Doloc Quest Tracker",
   "author": "Randommagic",
   "version": "1.0.0",
   "description": "Shows the items needed for faction missions and seed research, below the game's built-in quest display. Requires DTMAPI.",
@@ -10,10 +10,9 @@
     "DTMAPI"
   ],
   "localized_name": {
-    "koreana": "퀘스트 트래커",
-    "english": "Quest Tracker",
-    "schinese": "任务追踪器",
-    "tchinese": "任務追蹤器"
+    "english": "Doloc Quest Tracker",
+    "schinese": "",
+    "tchinese": ""
   },
   "localized_description": {
     "koreana": "세력 임무와 씨앗 연구에 필요한 아이템을 게임 화면의 기본 퀘스트 표시 하단에 보여줍니다. DTMAPI가 필요합니다.",

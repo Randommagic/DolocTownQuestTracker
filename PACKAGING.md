@@ -150,10 +150,29 @@ MODS\
 
 `workshop.json`은 **게임이 직접 쓴다** — `ModInfo.SetWorkshopId`가
 `FileUtils.TrySaveJson<ModWorkshopInfo>`로 모드 루트에 저장한다. 그래서 최초 업로드용
-패키지에는 **넣지 않는다.** `{"workshop_id": 0}` 같은 플레이스홀더를 두면
-`ModInfo.TryLoadWorkshopInfo`가 그걸 실제 id로 읽어들여, 업로더가 최초 업로드를 갱신으로
-오분류하고 `[MOD] Workshop update failed: missing workshop id`로 실패할 위험이 있다
-(`SteamWorkshopUploader.UploadMod`의 분기).
+패키지에는 **넣지 않는다.** 게임이 소유하는 파일이고, 우리가 쓴 플레이스홀더는 실데이터처럼
+보이면서 아무 정보도 담지 않는다.
+
+### 업로드가 새 항목인지 갱신인지 정하는 규칙
+
+`SteamWorkshopUploader.ResolveUploadPlan`의 IL:
+
+```csharp
+if (mod.workshopId == 0) { cb(new WorkshopUploadPlan(Create, 0)); return; }
+if (!SteamManager.Initialized) { warn; cb(new WorkshopUploadPlan(Create, 0)); return; }
+pendingWorkshopId = mod.workshopId;   // Steam에 그 항목이 있는지 조회한 뒤 Update
+```
+
+`workshopId`는 `ModInfo.TryLoadWorkshopInfo`가 `workshop.json`에서 읽는다. 즉
+**`workshop.json`이 그 폴더에 있으면 갱신, 없으면 새 항목**이다. `WorkshopUploadMode`는
+`Create = 0` / `Update = 1` 둘뿐이다.
+
+> **정정.** 이전 판에서 `{"workshop_id": 0}` 플레이스홀더가
+> `[MOD] Workshop update failed: missing workshop id`로 실패한다고 적었는데 틀렸다.
+> id가 0이면 위 분기에서 그냥 `Create`가 되어 **새 항목이 만들어진다.** 그 오류는
+> `mode == Update`인데 id가 무효할 때만 나오고, `ResolveUploadPlan`은 그런 조합을 만들지
+> 않는다. 넣지 않는 이유는 실패 위험이 아니라 "게임이 소유하는 파일이고 0은 무의미하다"는
+> 것이다.
 
 최초 업로드 후 게임이 써준 id를 `workshop/workshop.json`에 옮겨 적으면, 그 뒤로는
 `package.ps1`이 그 파일을 패키지와 로컬 폴더에 함께 복사한다.

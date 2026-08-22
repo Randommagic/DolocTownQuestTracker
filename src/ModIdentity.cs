@@ -17,7 +17,7 @@ namespace DolocTownQuestTracker
         /// </summary>
         internal const string UniqueID = "Randommagic.DolocTownQuestTracker";
 
-        internal const string Name = "Quest Tracker";
+        internal const string Name = "Doloc Quest Tracker";
         internal const string Version = "1.0.0";
     }
 }

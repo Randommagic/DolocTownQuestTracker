@@ -45,10 +45,11 @@ Copy-Item (Join-Path $here 'workshop\Content\DTMAPI\*.json') $outDtm
 Copy-Item $dll $outDtm
 
 # workshop.json carries the id Steam hands out on first upload, and the game writes it itself:
-# ModInfo.SetWorkshopId saves it into the mod root through TrySaveJson<ModWorkshopInfo>. So it is
-# copied when we already have one and otherwise left out entirely -- a placeholder id of 0 would
-# be loaded by ModInfo.TryLoadWorkshopInfo and risks the uploader treating a first upload as an
-# update, which fails with "Workshop update failed: missing workshop id".
+# ModInfo.SetWorkshopId saves it into the mod root through TrySaveJson<ModWorkshopInfo>. Its
+# presence is also what decides new-item vs update: SteamWorkshopUploader.ResolveUploadPlan
+# produces a Create plan when workshopId is 0 and an Update plan otherwise. So it is copied once
+# we have a real id, and simply left out before that -- a hand-written placeholder of 0 resolves
+# to Create exactly as absence does, while looking like real data.
 $wsSrc = Join-Path $here 'workshop\workshop.json'
 if (Test-Path $wsSrc) {
     Copy-Item $wsSrc $out
