@@ -44,8 +44,16 @@
       게임에 설치된 창작마당 항목들을 뜯어 형식 확인
       (`info.json` / `workshop.json` / `icon.png` / `preview.png` / `Content/`)
 - [x] **아이콘·미리보기 이미지** — `workshop/icon.png`, `workshop/preview.png` 추가 완료
-- [ ] **최초 업로드 후 `workshop_id` 기록** — 업로드하면 발급되는 id를
-      `workshop/workshop.json`에 적어야 이후 갱신이 같은 항목으로 올라감
+- [x] **최초 업로드 후 `workshop_id` 기록** — 2026-08-22 발행, **`3787985009`**.
+      게임이 `ModInfo.SetWorkshopId`로 `MODS\<폴더>\workshop.json`을 직접 써주므로
+      그 파일을 그대로 `workshop/workshop.json`에 가져왔다. 업로드 전후로 `info.json`은
+      다시 쓰이지 않았고, 모드 목록 제목이 `퀘스트 트래커`로 잡혀
+      `localized_name.koreana`가 실제 표시에 쓰인다는 것도 확인됨
+- [ ] **항목 페이지 설명 작성** — 구독 → Mods 화면 활성화 → 재시작 단계를
+      `info.json`이 아니라 Steam 항목 페이지 설명에 적는다
+- [ ] **구독본으로 검증** — 자기 항목을 구독하면 같은 `UniqueID`가 두 벌이 되어
+      DTMAPI가 막는다(`multiple enabled official candidates ... blocked`).
+      로컬 `MODS\` 사본을 끄거나 치운 뒤 재시작할 것
 - [x] **DTMAPI CodeMod로 포팅** — BepInEx 플러그인 경로를 버리고 DTMAPI 전용 단일 경로로.
       `BepInPlugin`→`DtmMod`, `ConfigEntry<T>`→`ModConfig` POCO + `IConfigHelper`,
       `ManualLogSource`→`IMonitor`, 설정은 DTMAPI 인게임 설정 페이지에 노출.

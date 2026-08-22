@@ -18,6 +18,37 @@
 └─ Content/         실제 배포물
 ```
 
+## 창작마당 항목
+
+**발행됨: `3787985009`** (2026-08-22 최초 업로드)
+https://steamcommunity.com/sharedfiles/filedetails/?id=3787985009
+
+`workshop/workshop.json`에 그 id가 들어 있고, `package.ps1`이 패키지와 로컬 폴더 양쪽에
+복사한다. 게임이 써준 파일을 그대로 가져왔으므로 형식·인코딩(BOM 없는 UTF-8, CRLF)이
+게임이 읽는 것과 정확히 같다. **손으로 수정하지 말 것.**
+
+### 최초 업로드에서 확인된 것
+
+- 게임이 `MODS\<폴더>\workshop.json`을 직접 만들어 발급된 id를 넣는다
+  (`ModInfo.SetWorkshopId`). 우리가 넣을 필요가 없고, 넣으면 안 된다
+- `info.json`은 **다시 쓰이지 않았다** — 업로드 전후 바이트 단위로 동일했다.
+  `koreana`를 포함한 네 언어가 그대로 살아남았다
+- 게임 모드 목록의 항목 제목이 `퀘스트 트래커`로 잡혔다. 즉 `localized_name.koreana`가
+  실제 표시에 쓰인다 (`mod_infos.json`의 `title`)
+
+### 자기 항목을 구독해 검증할 때 주의
+
+발행한 항목을 구독하면 같은 `UniqueID`가 두 벌 존재한다 — 로컬 `MODS\` 사본과 구독본.
+둘 다 켜 두면 DTMAPI가 막는다:
+
+```
+has multiple enabled official candidates ... blocked.
+Please enable only one copy in the official Mod page.
+```
+
+구독본으로 검증하려면 게임 Mods 화면에서 로컬 사본을 끄거나 `MODS\DolocTownQuestTracker\`를
+치운 뒤 재시작한다.
+
 ## 이 모드의 배포 방식 — DTMAPI CodeMod
 
 **구독만 하면 설치가 끝난다.** DLL을 손으로 옮길 필요가 없다.
