@@ -1,23 +1,52 @@
 using System.Collections.Generic;
+using System.Text;
 using BepInEx.Configuration;
 
 namespace DolocTownQuestTracker
 {
     /// <summary>
-    /// The set of entries the overlay shows.
+    /// The set of entries the overlay shows, kept per save.
     ///
-    /// Only ids are persisted; completion is recomputed every refresh. BepInEx config is
-    /// global while completion is per-save, so deleting a finished id from the file would
-    /// wipe the selection for other saves too. Filtering at display time gives the same
-    /// visible behaviour ("finished, so it disappeared") and stays correct across saves.
-    /// A side effect: finished entries stop counting toward the cap, so their slots free up.
+    /// BepInEx config is one file for the whole game, so every save's selections share a
+    /// single string, grouped by save slot:
+    ///
+    ///     0/1755367040=faction:vulture_fossil,seed:seed_tomato;2/1755999001=faction:x
+    ///     ^ ^          ^                                      ^
+    ///     | |          that slot's selections                 next slot
+    ///     | which save was in the slot (QuestDataProvider.TryCurrentSave)
+    ///     slot number
+    ///
+    /// The slot number alone is not enough to name a save, because deleting one frees its
+    /// number for the next new game. The second field settles that -- see Active().
+    ///
+    /// Only ids are stored; completion is recomputed every refresh. Finished entries stay in
+    /// the file and are filtered out by Resolve, so completing a mission never rewrites the
+    /// list. A side effect: finished entries stop counting toward the cap, freeing a slot.
     /// </summary>
     internal sealed class Watchlist
     {
         internal const int MaxTracked = 5;
 
+        private const char SlotSeparator = ';';
+        private const char HeaderSeparator = '=';
+        private const char SaveSeparator = '/';
+        private const char KeySeparator = ',';
+
+        private sealed class Slot
+        {
+            internal long Save;   // 0 = not known, see QuestDataProvider.TryCurrentSave
+            internal readonly List<string> Keys = new List<string>();
+        }
+
         private readonly ConfigEntry<string> store;
-        private readonly List<string> keys = new List<string>();
+        private readonly Dictionary<int, Slot> slots = new Dictionary<int, Slot>();
+
+        /// <summary>
+        /// Selections written before the format grew slot numbers. Handed to the first save
+        /// opened afterwards: which save they belonged to is recorded nowhere, and the one
+        /// being opened is the only sensible guess.
+        /// </summary>
+        private List<string> legacy;
 
         internal Watchlist(ConfigEntry<string> store)
         {
@@ -25,21 +54,129 @@ namespace DolocTownQuestTracker
             Load();
         }
 
+        /// <summary>
+        /// The loaded save's list, or null when no save is open.
+        ///
+        /// Resolved on every call rather than cached: the plugin starts long before a save
+        /// exists, and the player can switch saves without anything telling us.
+        /// </summary>
+        private Slot Active()
+        {
+            int index;
+            long save;
+            if (!QuestDataProvider.TryCurrentSave(out index, out save))
+            {
+                return null;
+            }
+
+            Slot slot;
+            if (!slots.TryGetValue(index, out slot))
+            {
+                slot = new Slot();
+                slot.Save = save;
+                slots[index] = slot;
+                if (legacy != null)
+                {
+                    slot.Keys.AddRange(legacy);
+                    legacy = null;
+                    Save();
+                }
+                return slot;
+            }
+
+            // Different save, same slot number: the one these entries belong to was deleted
+            // and a new game took its place. Drop them rather than show quests nobody picked.
+            //
+            // Either side being zero means the save could not be identified, and a guess would
+            // throw away real selections, so the entries are left alone. That is the same
+            // behaviour as having no check at all, which is the right way to degrade.
+            if (slot.Save != 0L && save != 0L && slot.Save != save)
+            {
+                slot.Keys.Clear();
+                slot.Save = save;
+                Save();
+                return slot;
+            }
+
+            if (slot.Save == 0L)
+            {
+                slot.Save = save;   // persisted by the next toggle; not worth a write of its own
+            }
+            return slot;
+        }
+
         private void Load()
         {
-            keys.Clear();
+            slots.Clear();
+            legacy = null;
+
             string raw = store.Value;
             if (string.IsNullOrEmpty(raw))
             {
                 return;
             }
-            string[] parts = raw.Split(',');
+
+            // No header separator means the flat, pre-slot format.
+            if (raw.IndexOf(HeaderSeparator) < 0)
+            {
+                List<string> keys = ParseKeys(raw);
+                if (keys.Count > 0)
+                {
+                    legacy = keys;
+                }
+                return;
+            }
+
+            string[] parts = raw.Split(SlotSeparator);
             for (int i = 0; i < parts.Length; i++)
             {
-                string key = parts[i].Trim();
+                string part = parts[i].Trim();
+                int split = part.IndexOf(HeaderSeparator);
+                if (split <= 0)
+                {
+                    continue;
+                }
+
+                int index;
+                long save;
+                if (!ParseHeader(part.Substring(0, split), out index, out save))
+                {
+                    continue;
+                }
+
+                Slot slot = new Slot();
+                slot.Save = save;
+                slot.Keys.AddRange(ParseKeys(part.Substring(split + 1)));
+                slots[index] = slot;
+            }
+        }
+
+        private static bool ParseHeader(string header, out int index, out long save)
+        {
+            index = -1;
+            save = 0L;
+            int slash = header.IndexOf(SaveSeparator);
+            if (slash < 0)
+            {
+                return int.TryParse(header.Trim(), out index);
+            }
+            if (!int.TryParse(header.Substring(0, slash).Trim(), out index))
+            {
+                return false;
+            }
+            long.TryParse(header.Substring(slash + 1).Trim(), out save);
+            return true;
+        }
+
+        private static List<string> ParseKeys(string csv)
+        {
+            List<string> keys = new List<string>();
+            string[] parts = csv.Split(KeySeparator);
+            for (int i = 0; i < parts.Length; i++)
+            {
                 QuestKind kind;
                 string id;
-                if (!WatchKey.TryParse(key, out kind, out id))
+                if (!WatchKey.TryParse(parts[i].Trim(), out kind, out id))
                 {
                     continue;
                 }
@@ -49,25 +186,52 @@ namespace DolocTownQuestTracker
                     keys.Add(normalized);
                 }
             }
+            return keys;
         }
 
         private void Save()
         {
-            store.Value = string.Join(",", keys.ToArray());
+            // Numeric slot order, so the file does not reshuffle on every write.
+            List<int> indices = new List<int>(slots.Keys);
+            indices.Sort();
+
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < indices.Count; i++)
+            {
+                Slot slot = slots[indices[i]];
+                if (slot.Keys.Count == 0)
+                {
+                    continue;
+                }
+                if (sb.Length > 0)
+                {
+                    sb.Append(SlotSeparator);
+                }
+                sb.Append(indices[i]).Append(SaveSeparator).Append(slot.Save)
+                  .Append(HeaderSeparator)
+                  .Append(string.Join(KeySeparator.ToString(), slot.Keys.ToArray()));
+            }
+            store.Value = sb.ToString();
         }
 
         internal bool Contains(string key)
         {
-            return keys.Contains(key);
+            Slot slot = Active();
+            return slot != null && slot.Keys.Contains(key);
         }
 
         /// <summary>Entries still visible in the given snapshot, in selection order, capped.</summary>
         internal List<QuestEntry> Resolve(QuestSnapshot snapshot)
         {
             List<QuestEntry> result = new List<QuestEntry>();
-            for (int i = 0; i < keys.Count && result.Count < MaxTracked; i++)
+            Slot slot = Active();
+            if (slot == null)
             {
-                QuestEntry e = snapshot.Find(keys[i]);
+                return result;
+            }
+            for (int i = 0; i < slot.Keys.Count && result.Count < MaxTracked; i++)
+            {
+                QuestEntry e = snapshot.Find(slot.Keys[i]);
                 if (e != null)
                 {
                     result.Add(e);
@@ -79,10 +243,16 @@ namespace DolocTownQuestTracker
         /// <summary>The cap counts only entries live in this snapshot, not every id on file.</summary>
         internal bool CanAdd(QuestSnapshot snapshot)
         {
+            Slot slot = Active();
+            return slot != null && CanAddTo(slot, snapshot);
+        }
+
+        private static bool CanAddTo(Slot slot, QuestSnapshot snapshot)
+        {
             int n = 0;
-            for (int i = 0; i < keys.Count; i++)
+            for (int i = 0; i < slot.Keys.Count; i++)
             {
-                if (snapshot.Find(keys[i]) == null)
+                if (snapshot.Find(slot.Keys[i]) == null)
                 {
                     continue;
                 }
@@ -98,19 +268,24 @@ namespace DolocTownQuestTracker
         /// <summary>Returns true when the state changed.</summary>
         internal bool Toggle(string key, QuestSnapshot snapshot)
         {
-            if (keys.Contains(key))
+            Slot slot = Active();
+            if (slot == null)
             {
-                keys.Remove(key);
+                return false;
             }
-            else if (!CanAdd(snapshot))
+            if (slot.Keys.Contains(key))
+            {
+                slot.Keys.Remove(key);
+            }
+            else if (!CanAddTo(slot, snapshot))
             {
                 return false;
             }
             else
             {
-                keys.Add(key);
+                slot.Keys.Add(key);
             }
-            Prune();
+            Prune(slot);
             Save();
             return true;
         }
@@ -121,25 +296,23 @@ namespace DolocTownQuestTracker
         /// game's config tables are not populated yet while the plugin is starting up.
         ///
         /// Deliberately NOT pruning ids that are merely absent from the current snapshot:
-        /// absent covers both "finished here" and "belongs to another save", and the config is
-        /// global. Removing on that basis wiped another save's selection as soon as anything
-        /// was toggled. Hiding finished entries is already handled by Resolve, so the file can
-        /// safely keep them.
+        /// absent covers both "finished" and "not unlocked yet", and hiding finished entries
+        /// is already Resolve's job.
         /// </summary>
-        private void Prune()
+        private static void Prune(Slot slot)
         {
-            for (int i = keys.Count - 1; i >= 0; i--)
+            for (int i = slot.Keys.Count - 1; i >= 0; i--)
             {
                 QuestKind kind;
                 string id;
-                if (!WatchKey.TryParse(keys[i], out kind, out id))
+                if (!WatchKey.TryParse(slot.Keys[i], out kind, out id))
                 {
-                    keys.RemoveAt(i);
+                    slot.Keys.RemoveAt(i);
                     continue;
                 }
                 if (!QuestDataProvider.IdExists(kind, id))
                 {
-                    keys.RemoveAt(i);
+                    slot.Keys.RemoveAt(i);
                 }
             }
         }

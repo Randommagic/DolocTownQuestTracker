@@ -23,7 +23,8 @@ namespace DolocTownQuestTracker
         private void Awake()
         {
             ConfigEntry<string> cfgWatchlist = Config.Bind<string>("Watchlist", "Selected", "",
-                "Tracked entries, comma separated, each prefixed with faction: or seed:. " +
+                "Tracked entries, kept separately for each save slot: " +
+                "slot/day=faction:id,seed:id;slot/day=... " +
                 "This is written by the toggles in the game's faction and seed panels -- " +
                 "there is no need to edit it by hand.");
 

@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using DolocTown;
 using DolocTown.Config;
 using DolocTown.Config.Mission;
 using DolocTown.Config.Plant;
 using DolocTown.GameData;
+using UnityEngine;
 
 namespace DolocTownQuestTracker
 {
@@ -20,6 +22,14 @@ namespace DolocTownQuestTracker
     /// </summary>
     internal sealed class QuestDataProvider
     {
+        // Save layout under Application.persistentDataPath, i.e.
+        // %USERPROFILE%\AppData\LocalLow\RedSawGames\DolocTown.
+        private const string SaveFolder = "SAVE";
+        private const string SaveFileFormat = "doloc-save-{0}.data";
+
+        private static readonly DateTime UnixEpoch =
+            new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
         // DolocAPI.GetItemTitle() allocates an Item on every call (it goes through
         // GenerateItem), so titles must be cached rather than fetched per frame.
         private readonly Dictionary<string, string> itemTitles = new Dictionary<string, string>();
@@ -98,6 +108,90 @@ namespace DolocTownQuestTracker
             catch
             {
                 return true;   // tables not ready -- never delete on a failed lookup
+            }
+        }
+
+        // Cached because Contains() is asked once per checkbox per panel refresh, and the file
+        // behind a loaded save does not change while it is loaded. An unknown value is not
+        // cached: a new game has no save file until it is first saved, and until then the
+        // slot's stored entries -- which belong to whatever save was there before -- would
+        // never be recognised as stale.
+        private static int fingerprintSlot = -1;
+        private static long fingerprintValue;
+        private static int reportedMissingSlot = -1;
+
+        /// <summary>
+        /// Which save is loaded: its slot number, and a value identifying that particular save.
+        /// False before a save is open, which is most of the plugin's startup.
+        ///
+        /// Slot numbers are reused -- delete a save and the next new game takes its number --
+        /// and nothing inside the save says which save it is: ArchiveDataHandle has no uuid,
+        /// creation time or world seed. So the identity comes from the save file's creation
+        /// time, which the game preserves: every rotated backup of a save still carries the
+        /// timestamp of the file first written when the world was created, while their write
+        /// times differ. A new game writes a new file and so gets a new value.
+        ///
+        /// Zero means "could not tell" -- the file was not found where expected, or the plugin
+        /// could not read it. Callers must treat zero as unknown rather than as a mismatch.
+        /// </summary>
+        internal static bool TryCurrentSave(out int slot, out long fingerprint)
+        {
+            slot = -1;
+            fingerprint = 0L;
+            try
+            {
+                ArchiveDataHandle handle = DolocAPI.archiveHandle;
+                if (handle == null)
+                {
+                    return false;
+                }
+                slot = handle.archiveIndex;
+            }
+            catch
+            {
+                return false;
+            }
+
+            if (slot != fingerprintSlot)
+            {
+                fingerprintSlot = slot;
+                fingerprintValue = 0L;
+            }
+            if (fingerprintValue == 0L)
+            {
+                fingerprintValue = SaveFileFingerprint(slot);
+            }
+            fingerprint = fingerprintValue;
+            return true;
+        }
+
+        private static long SaveFileFingerprint(int slot)
+        {
+            try
+            {
+                string path = Path.Combine(
+                    Path.Combine(Application.persistentDataPath, SaveFolder),
+                    string.Format(SaveFileFormat, slot));
+                if (!File.Exists(path))
+                {
+                    // A brand new game has no file until its first save. Unknown, not a
+                    // mismatch -- see the contract on TryCurrentSave. Reported once per slot,
+                    // because this is re-checked until the file turns up.
+                    if (reportedMissingSlot != slot)
+                    {
+                        reportedMissingSlot = slot;
+                        Diag.Info("No save file for slot " + slot + " yet: " + path);
+                    }
+                    return 0L;
+                }
+                reportedMissingSlot = -1;
+                DateTime created = File.GetCreationTimeUtc(path);
+                return (long)(created - UnixEpoch).TotalSeconds;
+            }
+            catch (Exception e)
+            {
+                Diag.Info("Save fingerprint unavailable: " + e.GetType().Name);
+                return 0L;
             }
         }
 
