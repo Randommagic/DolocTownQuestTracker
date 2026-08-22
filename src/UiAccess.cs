@@ -2,7 +2,7 @@ using System.Reflection;
 using HarmonyLib;
 using UnityEngine;
 
-namespace DolocQuestTracker
+namespace DolocTownQuestTracker
 {
     /// <summary>
     /// Reaches the panel behind a UI state. DolocUiState&lt;TPanel&gt; declares it as

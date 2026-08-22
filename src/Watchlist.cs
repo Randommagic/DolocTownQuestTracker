@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using BepInEx.Configuration;
 
-namespace DolocQuestTracker
+namespace DolocTownQuestTracker
 {
     /// <summary>
     /// The set of entries the overlay shows.

@@ -1,4 +1,4 @@
-namespace DolocQuestTracker
+namespace DolocTownQuestTracker
 {
     internal static class PluginInfo
     {
@@ -7,10 +7,10 @@ namespace DolocQuestTracker
         /// patch owner id. Changing it orphans existing users' settings, so it is fixed from
         /// the first release onwards.
         /// </summary>
-        internal const string Guid = "randommagic.dolocquesttracker";
+        internal const string Guid = "randommagic.doloctownquesttracker";
 
         internal const string Name = "Quest Tracker";
-        internal const string Version = "0.1.0";
+        internal const string Version = "1.0.0";
 
         /// <summary>
         /// Executable name without extension, compared against BepInEx's Paths.ProcessName.

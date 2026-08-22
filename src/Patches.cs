@@ -1,7 +1,7 @@
 using DolocTown;
 using HarmonyLib;
 
-namespace DolocQuestTracker
+namespace DolocTownQuestTracker
 {
     /// <summary>
     /// Tick pump. Patching the game's own Update means we only run while a player body

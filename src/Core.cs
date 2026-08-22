@@ -9,7 +9,7 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.Controls;
 
-namespace DolocQuestTracker
+namespace DolocTownQuestTracker
 {
     /// <summary>
     /// All plugin state and per-frame work, in a plain static class.

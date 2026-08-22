@@ -3,7 +3,7 @@ using DolocTown.UI;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace DolocQuestTracker
+namespace DolocTownQuestTracker
 {
     /// <summary>
     /// The tracking switch: how one is built, and what a click on one means.

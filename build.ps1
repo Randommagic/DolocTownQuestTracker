@@ -1,4 +1,4 @@
-# DolocQuestTracker build + deploy
+# DolocTownQuestTracker build + deploy
 #
 # This machine has no .NET SDK (dotnet runtimes only, no `dotnet build`) and no Roslyn,
 # so we drive the in-box .NET Framework compiler directly. That compiler is C# 5 only --
@@ -15,7 +15,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
-$modName = 'DolocQuestTracker'
+$modName = 'DolocTownQuestTracker'
 
 $managed = Join-Path $GameDir 'DolocTown_Data\Managed'
 $bepCore = Join-Path $GameDir 'BepInEx\core'

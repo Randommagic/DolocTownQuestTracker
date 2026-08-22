@@ -1,7 +1,7 @@
 using System;
 using BepInEx.Logging;
 
-namespace DolocQuestTracker
+namespace DolocTownQuestTracker
 {
     /// <summary>
     /// Log source usable from static code and Harmony patches, which have no plugin instance

@@ -1,0 +1,20 @@
+{
+  "name": "Quest Tracker",
+  "author": "randommagic",
+  "version": "1.0.0",
+  "description": "Shows the items still needed for faction missions and seed research, on the game screen next to the built-in mission tips.",
+  "tags": [
+    "Mod",
+    "QoL"
+  ],
+  "localized_name": {
+    "english": "Quest Tracker",
+    "schinese": "",
+    "tchinese": ""
+  },
+  "localized_description": {
+    "english": "Shows the items still needed for faction missions and seed research, on the game screen next to the built-in mission tips.",
+    "schinese": "",
+    "tchinese": ""
+  }
+}

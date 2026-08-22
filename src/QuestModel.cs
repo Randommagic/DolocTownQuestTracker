@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace DolocQuestTracker
+namespace DolocTownQuestTracker
 {
     internal enum QuestKind
     {

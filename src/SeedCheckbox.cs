@@ -7,7 +7,7 @@ using DolocTown.UI;
 using HarmonyLib;
 using UnityEngine;
 
-namespace DolocQuestTracker
+namespace DolocTownQuestTracker
 {
     /// <summary>
     /// Puts a tracking toggle on each box in the seed research panel.
@@ -24,7 +24,7 @@ namespace DolocQuestTracker
     /// </summary>
     internal static class SeedCheckbox
     {
-        private const string ObjectName = "DQT_SeedTrackToggle";
+        private const string ObjectName = "DTQT_SeedTrackToggle";
 
         private static readonly List<ToggleItemUI> toggles = new List<ToggleItemUI>();
         private static readonly List<string> slotIds = new List<string>();
@@ -101,6 +101,8 @@ namespace DolocQuestTracker
                     continue;
                 }
 
+                // Smaller than the faction one: a grid slot has far less room, and the switch
+                // sits in the corner the game leaves free for its unlocked badge.
                 ToggleItemUI toggle = ToggleWidget.Create(parent, ObjectName,
                     new Vector2(110f, 32f), new Vector2(-8f, -8f));
                 if (toggle != null)

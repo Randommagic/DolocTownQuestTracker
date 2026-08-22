@@ -4,7 +4,7 @@ using DolocTown.UI;
 using HarmonyLib;
 using UnityEngine;
 
-namespace DolocQuestTracker
+namespace DolocTownQuestTracker
 {
     /// <summary>
     /// Puts a tracking toggle on the game's faction mission panel.
@@ -18,7 +18,7 @@ namespace DolocQuestTracker
     /// </summary>
     internal static class FactionCheckbox
     {
-        private const string ObjectName = "DQT_TrackToggle";
+        private const string ObjectName = "DTQT_TrackToggle";
 
         private static FieldInfo currentMissionField;
         private static FactionMission current;
@@ -71,6 +71,8 @@ namespace DolocQuestTracker
                 return;
             }
 
+            // Top-right of the viewer. Wide enough for the switch's own hit area, inset to
+            // clear the panel's rounded corner.
             toggle = ToggleWidget.Create(parent, ObjectName,
                 new Vector2(240f, 40f), new Vector2(-12f, -8f));
             if (toggle != null)

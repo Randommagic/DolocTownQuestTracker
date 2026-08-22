@@ -6,7 +6,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace DolocQuestTracker
+namespace DolocTownQuestTracker
 {
     /// <summary>
     /// Renders tracked entries using the game's own mission-tip prefab
@@ -43,7 +43,7 @@ namespace DolocQuestTracker
     /// </summary>
     internal sealed class TipOverlay
     {
-        private const string CanvasName = "DolocQuestTrackerCanvas";
+        private const string CanvasName = "DolocTownQuestTrackerCanvas";
         private const string Separator = "   ";
         private const float LineHeight = 20f;
         private const float PrefabPadding = 16f;   // VerticalLayoutGroup l8 + r8

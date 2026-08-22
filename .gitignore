@@ -16,3 +16,6 @@ libs/
 *.user
 Thumbs.db
 desktop.ini
+
+# Packaged output -- regenerate with package.ps1
+dist/

@@ -6,7 +6,7 @@ using DolocTown.Config.Mission;
 using DolocTown.Config.Plant;
 using DolocTown.GameData;
 
-namespace DolocQuestTracker
+namespace DolocTownQuestTracker
 {
     /// <summary>
     /// Reads the two tracked systems out of the live game and flattens them into a snapshot.

@@ -50,7 +50,7 @@ C:\Program Files (x86)\Steam\steamapps\common\Doloc Town\
 
 ### 이 저장소 구조
 ```
-DolocQuestTracker/
+DolocTownQuestTracker/
 ├─ src/                               플러그인 소스
 ├─ tools/                             BundleDump.cs, ExtractTables.cs (설정 테이블 추출기)
 ├─ build.ps1                          빌드 + 게임에 배포
