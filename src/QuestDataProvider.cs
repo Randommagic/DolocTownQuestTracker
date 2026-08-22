@@ -16,7 +16,8 @@ namespace DolocTownQuestTracker
     ///   2. Proto.UnlockBeforeSettled || QueryFactionJoinState(MainSeries)  -- the game's own
     ///      check, mirrored from FactionMissionData's ctor (it sets unlock=false + lockHint).
     /// Seed research needs only IsSeedNodeAvailableToUnlock(), which already excludes
-    /// already-unlocked nodes and folds in the DefaultUnlock fallback.
+    /// already-unlocked nodes and folds in the DefaultUnlock fallback. Already-unlocked is
+    /// checked first anyway, to record it in Finished rather than just drop it silently.
     /// </summary>
     internal sealed class QuestDataProvider
     {
@@ -198,6 +199,7 @@ namespace DolocTownQuestTracker
                 }
                 if (m.IsComplete)
                 {
+                    snap.Finished.Add(WatchKey.Format(QuestKind.Faction, m.Proto.Id));
                     continue;
                 }
 
@@ -253,7 +255,11 @@ namespace DolocTownQuestTracker
                 {
                     continue;
                 }
-                // Single predicate: false when already unlocked, true when open for research.
+                if (handle.IsSeedNodeUnlocked(info.Id))
+                {
+                    snap.Finished.Add(WatchKey.Format(QuestKind.Seed, info.Id));
+                    continue;
+                }
                 if (!handle.IsSeedNodeAvailableToUnlock(info.Id))
                 {
                     continue;

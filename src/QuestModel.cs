@@ -117,6 +117,13 @@ namespace DolocTownQuestTracker
         public List<QuestEntry> Faction = new List<QuestEntry>();
         public List<QuestEntry> Seed = new List<QuestEntry>();
 
+        /// <summary>
+        /// Keys the provider saw completed while building this snapshot -- a submitted faction
+        /// mission or an already-unlocked seed node. Unlike "absent from Find", which also
+        /// covers not-yet-unlocked, this is a positive signal that watching it is done for good.
+        /// </summary>
+        public List<string> Finished = new List<string>();
+
         public QuestEntry Find(string key)
         {
             for (int i = 0; i < Faction.Count; i++)
@@ -134,6 +141,11 @@ namespace DolocTownQuestTracker
                 }
             }
             return null;
+        }
+
+        public bool IsFinished(string key)
+        {
+            return Finished.Contains(key);
         }
     }
 

@@ -19,9 +19,9 @@ namespace DolocTownQuestTracker
     /// The slot number alone cannot name a save, because deleting one frees its number for the
     /// next new game -- see SaveIdentity for what the second field is and why.
     ///
-    /// Only ids are stored; completion is recomputed every refresh. Finished entries stay in
-    /// the file and are filtered out by Resolve, so completing a mission never rewrites the
-    /// list. A side effect: finished entries stop counting toward the cap, freeing a slot.
+    /// Only ids are stored; completion is recomputed every refresh. Resolve filters finished
+    /// entries out of what's shown -- freeing a slot toward the cap -- but the file itself is
+    /// only rewritten on the next toggle, when Prune drops them for good (see Prune).
     /// </summary>
     internal sealed class Watchlist
     {
@@ -253,21 +253,23 @@ namespace DolocTownQuestTracker
             {
                 slot.Keys.Add(key);
             }
-            Prune(slot);
+            Prune(slot, snapshot);
             Save();
             return true;
         }
 
         /// <summary>
         /// Drops ids that no longer exist in the game's data at all -- a renamed or removed
-        /// mission after a patch. Runs on every toggle rather than once at load because the
-        /// game's config tables are not populated yet while the plugin is starting up.
+        /// mission after a patch -- and ids the snapshot just saw finished. Runs on every
+        /// toggle rather than once at load because the game's config tables (and the archive
+        /// handle the snapshot needs) are not populated yet while the plugin is starting up.
         ///
-        /// Deliberately NOT pruning ids that are merely absent from the current snapshot:
-        /// absent covers both "finished" and "not unlocked yet", and hiding finished entries
-        /// is already Resolve's job.
+        /// Deliberately NOT pruning everything merely absent from the snapshot: absent also
+        /// covers "not unlocked yet", which must stay watched. snapshot.Finished is the
+        /// narrower, positive signal -- completed, not just currently out of view -- that
+        /// Resolve's own filtering can't give us, since it only sees what's absent.
         /// </summary>
-        private static void Prune(Slot slot)
+        private static void Prune(Slot slot, QuestSnapshot snapshot)
         {
             for (int i = slot.Keys.Count - 1; i >= 0; i--)
             {
@@ -278,7 +280,7 @@ namespace DolocTownQuestTracker
                     slot.Keys.RemoveAt(i);
                     continue;
                 }
-                if (!QuestDataProvider.IdExists(kind, id))
+                if (!QuestDataProvider.IdExists(kind, id) || snapshot.IsFinished(slot.Keys[i]))
                 {
                     slot.Keys.RemoveAt(i);
                 }
