@@ -29,9 +29,10 @@ namespace DolocQuestTracker
     ///         progress  TMP + ContentSizeFitter   (we switch this off; see ApplyLayout)
     ///
     /// Two display modes, chosen by the one config entry this class takes ([Overlay] Marquee):
-    ///     true   one line, never truncated, scrolled inside a RectMask2D on the row.
+    ///     true   one line, never truncated, scrolled inside a RectMask2D on the row. Keeps
+    ///            the prefab's authored width, so our tips match the game's own exactly.
     ///     false  TMP wraps over up to WrapMaxLines lines, then ellipsises. Needs the wider
-    ///            WrapWidth to be comfortable.
+    ///            WrapWidth to be comfortable, so these are visibly wider than the game's.
     /// Every other number here is a constant below -- the widths, the scroll speed and pause,
     /// the wrapped line count. Horizontal alignment with the game's tips is a separate
     /// concern, settled by Core's OffsetX on our root.
@@ -47,10 +48,14 @@ namespace DolocQuestTracker
         private const float LineHeight = 20f;
         private const float PrefabPadding = 16f;   // VerticalLayoutGroup l8 + r8
 
-        private const float MarqueeWidth = 460f;   // scrolling: no reason to go wider
-        private const float WrapWidth = 700f;      // wrapping: needs the room
-        private const float MarqueeSpeed = 35f;    // px/s
-        private const float MarqueePause = 2f;     // s held at each end
+        // Scrolling keeps the prefab's authored width so our tips are exactly as wide as the
+        // game's own. The fallback covers a prefab that cannot be measured or reads back
+        // implausibly narrow -- checking it here is what lets ApplyLayout trust the width.
+        private const float FallbackTipWidth = 450f;
+        private const float MinTipWidth = 200f;
+        private const float WrapWidth = 700f;      // wrapping: needs more room than the prefab
+        private const float MarqueeSpeed = 30f;    // px/s
+        private const float MarqueePause = 3f;     // s held at each end
         private const int WrapMaxLines = 3;
         private const float RowSpacing = 8f;       // px between stacked tips
 
@@ -61,6 +66,7 @@ namespace DolocQuestTracker
 
         private bool visible = true;
         private bool marquee = true;
+        private float prefabWidth;   // measured from the prefab in TryBuild
 
         private Vector2 appliedOffset;
         private bool offsetApplied;
@@ -88,7 +94,14 @@ namespace DolocQuestTracker
         /// <summary>Each mode needs its own width; which one applies is not the caller's call.</summary>
         private float TipWidth
         {
-            get { return marquee ? MarqueeWidth : WrapWidth; }
+            get
+            {
+                if (!marquee)
+                {
+                    return WrapWidth;
+                }
+                return prefabWidth > 0f ? prefabWidth : FallbackTipWidth;
+            }
         }
 
         internal bool IsBuilt
@@ -204,6 +217,15 @@ namespace DolocQuestTracker
             {
                 blocker = "UI_ELEMENT_MISSIONTIPEX returned null (Addressables not ready?)";
                 return false;
+            }
+
+            if (prefabWidth <= 0f)
+            {
+                RectTransform prefabRect = prefab.transform as RectTransform;
+                prefabWidth = prefabRect != null && prefabRect.sizeDelta.x >= MinTipWidth
+                    ? prefabRect.sizeDelta.x
+                    : FallbackTipWidth;
+                Diag.Info("Tip prefab width = " + prefabWidth);
             }
 
             if (canvas == null)
@@ -335,12 +357,9 @@ namespace DolocQuestTracker
             fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
             fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
+            // TipWidth is validated at the measurement site, so the budget is always usable.
             float width = TipWidth;
             float budget = width - PrefabPadding;
-            if (budget < 40f)
-            {
-                budget = 434f;
-            }
 
             SetWidth(tipRect, width);
             SetWidth(tip.transform.Find("title") as RectTransform, budget);

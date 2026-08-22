@@ -371,6 +371,14 @@ namespace DolocQuestTracker
                 sb.AppendLine("blocker       = " + lastBuildBlocker);
                 sb.AppendLine("watchlist     = \"" + watchlist.Raw + "\"");
 
+                // Read before the forced refresh below overwrites them: these say whether the
+                // periodic refresh is actually firing.
+                sb.AppendLine("snapshotDirty = " + snapshotDirty);
+                sb.AppendLine("renderDirty   = " + renderDirty);
+                sb.AppendLine(string.Format("refreshDueIn  = {0:0.00}s",
+                    nextRefreshDueAt - Time.realtimeSinceStartupAsDouble));
+                sb.AppendLine("inventories   = " + InventoryCount());
+
                 if (QuestDataProvider.IsReady())
                 {
                     RefreshSnapshot(true);
@@ -387,6 +395,23 @@ namespace DolocQuestTracker
             catch (Exception e)
             {
                 Diag.Error("DumpDiagnostics threw: " + e);
+            }
+        }
+
+        /// <summary>
+        /// How many inventories the owned-count reaches into. Diagnostic only: if this grows
+        /// when it should not, the counts are reading somewhere unexpected.
+        /// </summary>
+        private static string InventoryCount()
+        {
+            try
+            {
+                LinearInventory[] inv = DolocAPI.GetBackpackWithInsideBoxes(false);
+                return inv == null ? "null" : inv.Length.ToString();
+            }
+            catch (Exception e)
+            {
+                return "threw " + e.GetType().Name;
             }
         }
 
