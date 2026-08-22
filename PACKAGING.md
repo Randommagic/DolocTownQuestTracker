@@ -75,14 +75,14 @@ public getter/setter만 쓴다. 사용자는 인게임 DTMAPI 설정 페이지�
 %USERPROFILE%\AppData\LocalLow\RedSawGames\DolocTown\MODS\
 ```
 
-`build.ps1`이 `-NoDeploy` 없이 돌면 여기에 바로 배치한다. 업로드 직전에는 `package.ps1`이 만든
-`dist\workshop\`을 폴더째로 복사한다.
+`package.ps1`이 빌드·패키징을 마친 뒤 이 아래에 업로드용 트리를 **직접 배치한다**
+(`STAGED` 줄로 알려준다). 손으로 복사할 일은 없다. `build.ps1`은 개발 중 반복 테스트용이라
+DLL과 JSON만 갱신하고, 업로드 직전에는 `package.ps1`을 쓴다.
 
 ```
 MODS\
 └─ DolocTownQuestTracker\      ← 이름은 자유
    ├─ info.json
-   ├─ workshop.json
    ├─ icon.png
    ├─ preview.png
    └─ Content\
@@ -91,6 +91,8 @@ MODS\
          ├─ dtmapi-package.json
          └─ DolocTownQuestTracker.dll
 ```
+
+`workshop.json`은 최초 업로드 전에는 없다 (위 "확인된 것과 추정인 것" 참고).
 
 ### 게임 내 조작
 
@@ -113,10 +115,17 @@ MODS\
 `info.json`과 `preview.png`는 게임 어셈블리의 문자열 리터럴에 있으므로 **게임이 직접 읽는다.**
 
 `icon.png`와 `workshop.json`은 `DolocTown_Data\Managed`의 어떤 어셈블리에도
-문자열로 없는데, 설치된 창작마당 항목 4개에는 모두 존재한다. 넣어도 해가 없으니
-패키지에 포함하되, **최초 업로드 후 게임이 로컬 폴더에 `workshop.json`을 써주는지
-확인할 것.** 써준다면 그 id를 `workshop/workshop.json`에 옮겨 적어야 다음 갱신이
-같은 항목으로 올라간다.
+문자열로 없는데, 설치된 창작마당 항목 4개에는 모두 존재한다.
+
+`workshop.json`은 **게임이 직접 쓴다** — `ModInfo.SetWorkshopId`가
+`FileUtils.TrySaveJson<ModWorkshopInfo>`로 모드 루트에 저장한다. 그래서 최초 업로드용
+패키지에는 **넣지 않는다.** `{"workshop_id": 0}` 같은 플레이스홀더를 두면
+`ModInfo.TryLoadWorkshopInfo`가 그걸 실제 id로 읽어들여, 업로더가 최초 업로드를 갱신으로
+오분류하고 `[MOD] Workshop update failed: missing workshop id`로 실패할 위험이 있다
+(`SteamWorkshopUploader.UploadMod`의 분기).
+
+최초 업로드 후 게임이 써준 id를 `workshop/workshop.json`에 옮겨 적으면, 그 뒤로는
+`package.ps1`이 그 파일을 패키지와 로컬 폴더에 함께 복사한다.
 
 ### 언어별 이름·설명은 세 개보다 많이 넣어도 된다
 

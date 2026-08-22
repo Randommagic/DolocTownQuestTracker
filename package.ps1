@@ -44,17 +44,16 @@ Copy-Item (Join-Path $here 'workshop\info.json') $out
 Copy-Item (Join-Path $here 'workshop\Content\DTMAPI\*.json') $outDtm
 Copy-Item $dll $outDtm
 
-# workshop.json carries the id Steam hands out on first upload. Keep whatever is already
-# there; only write a placeholder when there is none, so re-packaging never orphans the item.
+# workshop.json carries the id Steam hands out on first upload, and the game writes it itself:
+# ModInfo.SetWorkshopId saves it into the mod root through TrySaveJson<ModWorkshopInfo>. So it is
+# copied when we already have one and otherwise left out entirely -- a placeholder id of 0 would
+# be loaded by ModInfo.TryLoadWorkshopInfo and risks the uploader treating a first upload as an
+# update, which fails with "Workshop update failed: missing workshop id".
 $wsSrc = Join-Path $here 'workshop\workshop.json'
 if (Test-Path $wsSrc) {
     Copy-Item $wsSrc $out
 } else {
-    # Written through .NET rather than Out-File: Out-File -Encoding utf8 adds a BOM on Windows
-    # PowerShell, and this file is parsed by the game.
-    $noBom = New-Object System.Text.UTF8Encoding($false)
-    [System.IO.File]::WriteAllText((Join-Path $out 'workshop.json'), '{ "workshop_id": 0 }', $noBom)
-    Write-Output 'NOTE  workshop.json had no id -- wrote a placeholder (0).'
+    Write-Output 'NOTE  no workshop.json yet -- omitted, the game writes it after the first upload.'
 }
 
 # Four files repeat identity for four different readers: the store page, DTMAPI's manifest
@@ -91,6 +90,26 @@ foreach ($art in @('icon.png', 'preview.png')) {
 
 $zip = Join-Path $dist ($modName + '-' + $version + '.zip')
 Compress-Archive -Path (Join-Path $out 'Content') -DestinationPath $zip
+
+# Stage the same tree in the game's local MODS folder, which is what the in-game uploader reads.
+# Content is wiped first so nothing from an earlier layout is uploaded by accident; workshop.json
+# is left alone, because after the first upload the game owns that file in this folder.
+$mods = Join-Path $env:USERPROFILE ('AppData\LocalLow\RedSawGames\DolocTown\MODS\' + $modName)
+$modsContent = Join-Path $mods 'Content'
+try {
+    if (Test-Path $modsContent) { Remove-Item $modsContent -Recurse -Force }
+    New-Item -ItemType Directory -Force $mods | Out-Null
+    Copy-Item (Join-Path $out 'Content') $mods -Recurse -Force
+    foreach ($f in @('info.json', 'icon.png', 'preview.png')) {
+        Copy-Item (Join-Path $out $f) $mods -Force
+    }
+    if (Test-Path $wsSrc) { Copy-Item $wsSrc $mods -Force }
+    Write-Output ('STAGED    ' + $mods)
+    Write-Output '  upload from the title screen Mods page, Local tab'
+} catch {
+    Write-Output ("STAGING FAILED: " + $_.Exception.Message)
+    Write-Output '  close Doloc Town and run this again -- a loaded DLL cannot be overwritten'
+}
 
 Write-Output ''
 Write-Output ("PACKAGED  " + $version)
