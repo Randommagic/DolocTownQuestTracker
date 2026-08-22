@@ -94,14 +94,7 @@ namespace DolocTownQuestTracker
         /// <summary>Each mode needs its own width; which one applies is not the caller's call.</summary>
         private float TipWidth
         {
-            get
-            {
-                if (!marquee)
-                {
-                    return WrapWidth;
-                }
-                return prefabWidth > 0f ? prefabWidth : FallbackTipWidth;
-            }
+            get { return marquee ? prefabWidth : WrapWidth; }
         }
 
         internal bool IsBuilt

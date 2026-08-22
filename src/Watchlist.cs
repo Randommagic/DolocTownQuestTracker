@@ -10,14 +10,14 @@ namespace DolocTownQuestTracker
     /// BepInEx config is one file for the whole game, so every save's selections share a
     /// single string, grouped by save slot:
     ///
-    ///     0/1755367040=faction:vulture_fossil,seed:seed_tomato;2/1755999001=faction:x
+    ///     0/1786903040=faction:vulture_fossil,seed:seed_tomato;2/1787376658=faction:x
     ///     ^ ^          ^                                      ^
     ///     | |          that slot's selections                 next slot
-    ///     | which save was in the slot (QuestDataProvider.TryCurrentSave)
+    ///     | which save was in the slot (SaveIdentity)
     ///     slot number
     ///
-    /// The slot number alone is not enough to name a save, because deleting one frees its
-    /// number for the next new game. The second field settles that -- see Active().
+    /// The slot number alone cannot name a save, because deleting one frees its number for the
+    /// next new game -- see SaveIdentity for what the second field is and why.
     ///
     /// Only ids are stored; completion is recomputed every refresh. Finished entries stay in
     /// the file and are filtered out by Resolve, so completing a mission never rewrites the
@@ -27,6 +27,9 @@ namespace DolocTownQuestTracker
     {
         internal const int MaxTracked = 5;
 
+        /// <summary>Shape of the stored string, for the config file's own comment.</summary>
+        internal const string StoredFormat = "slot/save=faction:id,seed:id;slot/save=...";
+
         private const char SlotSeparator = ';';
         private const char HeaderSeparator = '=';
         private const char SaveSeparator = '/';
@@ -34,19 +37,12 @@ namespace DolocTownQuestTracker
 
         private sealed class Slot
         {
-            internal long Save;   // 0 = not known, see QuestDataProvider.TryCurrentSave
+            internal long Save;   // 0 = not known, see SaveIdentity
             internal readonly List<string> Keys = new List<string>();
         }
 
         private readonly ConfigEntry<string> store;
         private readonly Dictionary<int, Slot> slots = new Dictionary<int, Slot>();
-
-        /// <summary>
-        /// Selections written before the format grew slot numbers. Handed to the first save
-        /// opened afterwards: which save they belonged to is recorded nowhere, and the one
-        /// being opened is the only sensible guess.
-        /// </summary>
-        private List<string> legacy;
 
         internal Watchlist(ConfigEntry<string> store)
         {
@@ -58,49 +54,42 @@ namespace DolocTownQuestTracker
         /// The loaded save's list, or null when no save is open.
         ///
         /// Resolved on every call rather than cached: the plugin starts long before a save
-        /// exists, and the player can switch saves without anything telling us.
+        /// exists, the panel patches fire independently of Core's tick, and the player can
+        /// switch saves without anything telling us. Pulling here means the answer is right on
+        /// the first call whenever it happens, with no initialisation order to get wrong.
         /// </summary>
         private Slot Active()
         {
             int index;
             long save;
-            if (!QuestDataProvider.TryCurrentSave(out index, out save))
+            if (!SaveIdentity.TryCurrent(out index, out save))
             {
                 return null;
             }
 
             Slot slot;
+            bool changed = false;
             if (!slots.TryGetValue(index, out slot))
             {
                 slot = new Slot();
-                slot.Save = save;
                 slots[index] = slot;
-                if (legacy != null)
-                {
-                    slot.Keys.AddRange(legacy);
-                    legacy = null;
-                    Save();
-                }
-                return slot;
             }
-
-            // Different save, same slot number: the one these entries belong to was deleted
-            // and a new game took its place. Drop them rather than show quests nobody picked.
-            //
-            // Either side being zero means the save could not be identified, and a guess would
-            // throw away real selections, so the entries are left alone. That is the same
-            // behaviour as having no check at all, which is the right way to degrade.
-            if (slot.Save != 0L && save != 0L && slot.Save != save)
+            else if (SaveIdentity.IsDifferentSave(slot.Save, save))
             {
+                // A new game took this slot number over from the save these entries belong to.
+                // Drop them rather than show quests nobody picked.
                 slot.Keys.Clear();
-                slot.Save = save;
-                Save();
-                return slot;
+                changed = true;
             }
 
-            if (slot.Save == 0L)
+            if (save != 0L && slot.Save != save)
             {
-                slot.Save = save;   // persisted by the next toggle; not worth a write of its own
+                slot.Save = save;
+                changed = true;
+            }
+            if (changed)
+            {
+                Save();
             }
             return slot;
         }
@@ -108,7 +97,6 @@ namespace DolocTownQuestTracker
         private void Load()
         {
             slots.Clear();
-            legacy = null;
 
             string raw = store.Value;
             if (string.IsNullOrEmpty(raw))
@@ -116,56 +104,31 @@ namespace DolocTownQuestTracker
                 return;
             }
 
-            // No header separator means the flat, pre-slot format.
-            if (raw.IndexOf(HeaderSeparator) < 0)
-            {
-                List<string> keys = ParseKeys(raw);
-                if (keys.Count > 0)
-                {
-                    legacy = keys;
-                }
-                return;
-            }
-
             string[] parts = raw.Split(SlotSeparator);
             for (int i = 0; i < parts.Length; i++)
             {
-                string part = parts[i].Trim();
-                int split = part.IndexOf(HeaderSeparator);
-                if (split <= 0)
+                // Split with a count of 2 so a stray separator in the tail stays in the tail.
+                string[] halves = parts[i].Split(new char[] { HeaderSeparator }, 2);
+                if (halves.Length != 2)
                 {
                     continue;
                 }
-
+                string[] header = halves[0].Split(new char[] { SaveSeparator }, 2);
+                if (header.Length != 2)
+                {
+                    continue;
+                }
                 int index;
-                long save;
-                if (!ParseHeader(part.Substring(0, split), out index, out save))
+                if (!int.TryParse(header[0].Trim(), out index))
                 {
                     continue;
                 }
 
                 Slot slot = new Slot();
-                slot.Save = save;
-                slot.Keys.AddRange(ParseKeys(part.Substring(split + 1)));
+                long.TryParse(header[1].Trim(), out slot.Save);   // unparsable = 0 = unknown
+                slot.Keys.AddRange(ParseKeys(halves[1]));
                 slots[index] = slot;
             }
-        }
-
-        private static bool ParseHeader(string header, out int index, out long save)
-        {
-            index = -1;
-            save = 0L;
-            int slash = header.IndexOf(SaveSeparator);
-            if (slash < 0)
-            {
-                return int.TryParse(header.Trim(), out index);
-            }
-            if (!int.TryParse(header.Substring(0, slash).Trim(), out index))
-            {
-                return false;
-            }
-            long.TryParse(header.Substring(slash + 1).Trim(), out save);
-            return true;
         }
 
         private static List<string> ParseKeys(string csv)
@@ -208,8 +171,15 @@ namespace DolocTownQuestTracker
                     sb.Append(SlotSeparator);
                 }
                 sb.Append(indices[i]).Append(SaveSeparator).Append(slot.Save)
-                  .Append(HeaderSeparator)
-                  .Append(string.Join(KeySeparator.ToString(), slot.Keys.ToArray()));
+                  .Append(HeaderSeparator);
+                for (int k = 0; k < slot.Keys.Count; k++)
+                {
+                    if (k > 0)
+                    {
+                        sb.Append(KeySeparator);
+                    }
+                    sb.Append(slot.Keys[k]);
+                }
             }
             store.Value = sb.ToString();
         }
@@ -225,17 +195,9 @@ namespace DolocTownQuestTracker
         {
             List<QuestEntry> result = new List<QuestEntry>();
             Slot slot = Active();
-            if (slot == null)
+            if (slot != null)
             {
-                return result;
-            }
-            for (int i = 0; i < slot.Keys.Count && result.Count < MaxTracked; i++)
-            {
-                QuestEntry e = snapshot.Find(slot.Keys[i]);
-                if (e != null)
-                {
-                    result.Add(e);
-                }
+                CollectLive(slot, snapshot, result);
             }
             return result;
         }
@@ -244,25 +206,31 @@ namespace DolocTownQuestTracker
         internal bool CanAdd(QuestSnapshot snapshot)
         {
             Slot slot = Active();
-            return slot != null && CanAddTo(slot, snapshot);
+            return slot != null && CollectLive(slot, snapshot, null) < MaxTracked;
         }
 
-        private static bool CanAddTo(Slot slot, QuestSnapshot snapshot)
+        /// <summary>
+        /// Stored keys that are live in this snapshot, up to the cap. Collects into the list
+        /// when one is given; passing null just counts, which keeps the cap check -- asked once
+        /// per checkbox -- from allocating.
+        /// </summary>
+        private static int CollectLive(Slot slot, QuestSnapshot snapshot, List<QuestEntry> into)
         {
             int n = 0;
-            for (int i = 0; i < slot.Keys.Count; i++)
+            for (int i = 0; i < slot.Keys.Count && n < MaxTracked; i++)
             {
-                if (snapshot.Find(slot.Keys[i]) == null)
+                QuestEntry e = snapshot.Find(slot.Keys[i]);
+                if (e == null)
                 {
                     continue;
                 }
                 n++;
-                if (n >= MaxTracked)
+                if (into != null)
                 {
-                    return false;
+                    into.Add(e);
                 }
             }
-            return true;
+            return n;
         }
 
         /// <summary>Returns true when the state changed.</summary>
@@ -277,7 +245,7 @@ namespace DolocTownQuestTracker
             {
                 slot.Keys.Remove(key);
             }
-            else if (!CanAddTo(slot, snapshot))
+            else if (CollectLive(slot, snapshot, null) >= MaxTracked)
             {
                 return false;
             }

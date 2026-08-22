@@ -377,7 +377,15 @@ namespace DolocTownQuestTracker
                 sb.AppendLine("renderDirty   = " + renderDirty);
                 sb.AppendLine(string.Format("refreshDueIn  = {0:0.00}s",
                     nextRefreshDueAt - Time.realtimeSinceStartupAsDouble));
-                sb.AppendLine("inventories   = " + InventoryCount());
+                sb.AppendLine("inventories   = " + provider.DescribeInventories());
+
+                // The two ways per-save tracking can go wrong -- selections vanishing, or
+                // being shared between saves -- are both decided by these two numbers.
+                int saveSlot;
+                long saveId;
+                bool saveOpen = SaveIdentity.TryCurrent(out saveSlot, out saveId);
+                sb.AppendLine(string.Format("save          = {0} slot={1} id={2}",
+                    saveOpen ? "open" : "none", saveSlot, saveId));
 
                 if (QuestDataProvider.IsReady())
                 {
@@ -395,23 +403,6 @@ namespace DolocTownQuestTracker
             catch (Exception e)
             {
                 Diag.Error("DumpDiagnostics threw: " + e);
-            }
-        }
-
-        /// <summary>
-        /// How many inventories the owned-count reaches into. Diagnostic only: if this grows
-        /// when it should not, the counts are reading somewhere unexpected.
-        /// </summary>
-        private static string InventoryCount()
-        {
-            try
-            {
-                LinearInventory[] inv = DolocAPI.GetBackpackWithInsideBoxes(false);
-                return inv == null ? "null" : inv.Length.ToString();
-            }
-            catch (Exception e)
-            {
-                return "threw " + e.GetType().Name;
             }
         }
 
