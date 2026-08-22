@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Text;
 using BepInEx.Configuration;
 
 namespace DolocQuestTracker
@@ -54,16 +53,7 @@ namespace DolocQuestTracker
 
         private void Save()
         {
-            StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < keys.Count; i++)
-            {
-                if (sb.Length > 0)
-                {
-                    sb.Append(',');
-                }
-                sb.Append(keys[i]);
-            }
-            store.Value = sb.ToString();
+            store.Value = string.Join(",", keys.ToArray());
         }
 
         internal bool Contains(string key)
@@ -86,23 +76,23 @@ namespace DolocQuestTracker
             return result;
         }
 
-        /// <summary>How many tracked entries are currently live -- the cap applies to these.</summary>
-        internal int ActiveCount(QuestSnapshot snapshot)
+        /// <summary>The cap counts only entries live in this snapshot, not every id on file.</summary>
+        internal bool CanAdd(QuestSnapshot snapshot)
         {
             int n = 0;
             for (int i = 0; i < keys.Count; i++)
             {
-                if (snapshot.Find(keys[i]) != null)
+                if (snapshot.Find(keys[i]) == null)
                 {
-                    n++;
+                    continue;
+                }
+                n++;
+                if (n >= MaxTracked)
+                {
+                    return false;
                 }
             }
-            return n;
-        }
-
-        internal bool CanAdd(QuestSnapshot snapshot)
-        {
-            return ActiveCount(snapshot) < MaxTracked;
+            return true;
         }
 
         /// <summary>Returns true when the state changed.</summary>
@@ -111,15 +101,15 @@ namespace DolocQuestTracker
             if (keys.Contains(key))
             {
                 keys.Remove(key);
-                Prune();
-                Save();
-                return true;
             }
-            if (!CanAdd(snapshot))
+            else if (!CanAdd(snapshot))
             {
                 return false;
             }
-            keys.Add(key);
+            else
+            {
+                keys.Add(key);
+            }
             Prune();
             Save();
             return true;
@@ -127,7 +117,8 @@ namespace DolocQuestTracker
 
         /// <summary>
         /// Drops ids that no longer exist in the game's data at all -- a renamed or removed
-        /// mission after a patch.
+        /// mission after a patch. Runs on every toggle rather than once at load because the
+        /// game's config tables are not populated yet while the plugin is starting up.
         ///
         /// Deliberately NOT pruning ids that are merely absent from the current snapshot:
         /// absent covers both "finished here" and "belongs to another save", and the config is

@@ -28,15 +28,17 @@ namespace DolocQuestTracker
     ///         guide     TMP + LayoutElement
     ///         progress  TMP + ContentSizeFitter   (we switch this off; see ApplyLayout)
     ///
-    /// Two display modes, chosen by [Overlay] Marquee:
+    /// Two display modes, chosen by the one config entry this class takes ([Overlay] Marquee):
     ///     true   one line, never truncated, scrolled inside a RectMask2D on the row.
-    ///     false  TMP wraps over up to [Overlay] MaxLines lines, then ellipsises. Needs
-    ///            Width around 700 to be comfortable.
+    ///     false  TMP wraps over up to WrapMaxLines lines, then ellipsises. Needs the wider
+    ///            WrapWidth to be comfortable.
+    /// Every other number here is a constant below -- the widths, the scroll speed and pause,
+    /// the wrapped line count. Horizontal alignment with the game's tips is a separate
+    /// concern, settled by Core's OffsetX on our root.
     ///
     /// Because childControlWidth is false, the root, the title and the row all have to be
     /// widened together -- a child left at its authored 434 gets clipped even when the root is
-    /// wider. Horizontal alignment with the game's tips is a separate concern, settled once by
-    /// [Overlay] OffsetX = -12 on our root.
+    /// wider.
     /// </summary>
     internal sealed class TipOverlay
     {
@@ -45,19 +47,23 @@ namespace DolocQuestTracker
         private const float LineHeight = 20f;
         private const float PrefabPadding = 16f;   // VerticalLayoutGroup l8 + r8
 
+        private const float MarqueeWidth = 460f;   // scrolling: no reason to go wider
+        private const float WrapWidth = 700f;      // wrapping: needs the room
+        private const float MarqueeSpeed = 35f;    // px/s
+        private const float MarqueePause = 2f;     // s held at each end
+        private const int WrapMaxLines = 3;
+        private const float RowSpacing = 8f;       // px between stacked tips
+
         private Canvas canvas;
         private RectTransform root;
         private ObjectPool<MissionTip> pool;
-        private readonly List<MissionTip> live = new List<MissionTip>();
         private readonly List<Marquee> marquees = new List<Marquee>();
 
-        private float spacing = 8f;
         private bool visible = true;
-        private float tipWidth = 460f;
-        private int wrapMaxLines = 3;
         private bool marquee = true;
-        private float marqueeSpeed = 35f;
-        private float marqueePause = 2f;
+
+        private Vector2 appliedOffset;
+        private bool offsetApplied;
 
         /// <summary>
         /// One scrolling line. In the row's local space the right edge is 0, the text rect
@@ -74,15 +80,15 @@ namespace DolocQuestTracker
             public bool HoldingTail;
         }
 
-        internal void Configure(float width, int maxLines, float rowSpacing,
-            bool useMarquee, float speed, float pause)
+        internal void Configure(bool useMarquee)
         {
-            tipWidth = width;
-            wrapMaxLines = maxLines < 1 ? 1 : maxLines;
-            spacing = rowSpacing;
             marquee = useMarquee;
-            marqueeSpeed = speed;
-            marqueePause = pause;
+        }
+
+        /// <summary>Each mode needs its own width; which one applies is not the caller's call.</summary>
+        private float TipWidth
+        {
+            get { return marquee ? MarqueeWidth : WrapWidth; }
         }
 
         internal bool IsBuilt
@@ -92,7 +98,7 @@ namespace DolocQuestTracker
 
         internal int LiveCount
         {
-            get { return live.Count; }
+            get { return pool != null ? pool.ActiveCount : 0; }
         }
 
         internal void SetVisible(bool value)
@@ -106,10 +112,19 @@ namespace DolocQuestTracker
 
         internal void SetOffset(Vector2 anchoredOffset)
         {
-            if (root != null)
+            if (root == null)
             {
-                root.anchoredPosition = anchoredOffset;
+                return;
             }
+            // Unity's setter does not compare first: writing the same value every frame still
+            // dirties the rect and re-registers the whole tip stack for a canvas rebuild.
+            if (offsetApplied && appliedOffset == anchoredOffset)
+            {
+                return;
+            }
+            appliedOffset = anchoredOffset;
+            offsetApplied = true;
+            root.anchoredPosition = anchoredOffset;
         }
 
         /// <summary>Advances the scrolling lines. Driven from Core's tick.</summary>
@@ -127,9 +142,9 @@ namespace DolocQuestTracker
             for (int i = 0; i < marquees.Count; i++)
             {
                 Marquee m = marquees[i];
-                if (m.Rect == null || m.Start <= 0.5f)
+                if (m.Rect == null)
                 {
-                    continue;   // text already fits; never move
+                    continue;
                 }
 
                 if (m.PauseLeft > 0f)
@@ -139,17 +154,17 @@ namespace DolocQuestTracker
                     {
                         m.HoldingTail = false;
                         m.Offset = m.Start;
-                        m.PauseLeft = marqueePause;
+                        m.PauseLeft = MarqueePause;
                     }
                 }
                 else
                 {
-                    m.Offset -= marqueeSpeed * deltaTime;
+                    m.Offset -= MarqueeSpeed * deltaTime;
                     if (m.Offset <= 0f)
                     {
                         m.Offset = 0f;
                         m.HoldingTail = true;
-                        m.PauseLeft = marqueePause;
+                        m.PauseLeft = MarqueePause;
                     }
                 }
 
@@ -162,7 +177,7 @@ namespace DolocQuestTracker
         /// Lazily builds the canvas + pool. Returns false while the game is not ready -- the
         /// prefab comes from Addressables and is null early in the boot sequence.
         /// </summary>
-        internal bool TryBuild(Vector2 anchoredOffset, out string blocker)
+        internal bool TryBuild(out string blocker)
         {
             blocker = "";
             if (IsBuilt)
@@ -221,11 +236,9 @@ namespace DolocQuestTracker
                 GameObject rootGo = new GameObject("TipRoot", typeof(RectTransform));
                 root = rootGo.GetComponent<RectTransform>();
                 root.SetParent(canvas.transform, false);
-                root.anchorMin = new Vector2(1f, 1f);
-                root.anchorMax = new Vector2(1f, 1f);
-                root.pivot = new Vector2(1f, 1f);
+                DolocUtils.SetAnchorAndPivot(root, UIAlignmentType.RightTop);
                 root.sizeDelta = Vector2.zero;
-                root.anchoredPosition = anchoredOffset;
+                offsetApplied = false;   // the caller's SetOffset places it
                 rootGo.SetActive(visible);
             }
 
@@ -255,22 +268,6 @@ namespace DolocQuestTracker
             return Object.FindObjectOfType<CanvasScaler>();
         }
 
-        private void ReleaseAll()
-        {
-            marquees.Clear();
-            if (pool != null)
-            {
-                for (int i = 0; i < live.Count; i++)
-                {
-                    if (live[i] != null)
-                    {
-                        pool.Recycle(live[i]);
-                    }
-                }
-            }
-            live.Clear();
-        }
-
         /// <summary>Rebuilds the whole stack. Cheap at a handful of entries.</summary>
         internal void Render(List<TipLine> lines)
         {
@@ -278,7 +275,8 @@ namespace DolocQuestTracker
             {
                 return;
             }
-            ReleaseAll();
+            marquees.Clear();
+            pool.RecycleAll();
 
             float y = 0f;
             for (int i = 0; i < lines.Count; i++)
@@ -288,33 +286,24 @@ namespace DolocQuestTracker
                 {
                     continue;
                 }
+                RectTransform tipRect = tip.transform as RectTransform;
+                if (tipRect == null)
+                {
+                    continue;   // not a UI object; nothing sensible to place
+                }
+
                 TipLine line = lines[i];
                 tip.Render(line.Title, "", "", line.AccentHex);
-                ApplyLayout(tip, line);
+                ApplyLayout(tip, tipRect, line);
 
-                RectTransform rt = tip.transform as RectTransform;
-                if (rt != null)
-                {
-                    rt.localPosition = new Vector3(0f, y, 0f);
-                    y -= rt.sizeDelta.y + spacing;
-                }
-                else
-                {
-                    y -= 56f + spacing;
-                }
+                tipRect.localPosition = new Vector3(0f, y, 0f);
+                y -= tipRect.sizeDelta.y + RowSpacing;
                 tip.SetVisible(true);
-                live.Add(tip);
             }
         }
 
-        private void ApplyLayout(MissionTip tip, TipLine line)
+        private void ApplyLayout(MissionTip tip, RectTransform tipRect, TipLine line)
         {
-            RectTransform tipRect = tip.transform as RectTransform;
-            if (tipRect == null)
-            {
-                return;
-            }
-
             // Located structurally: root > row(HorizontalLayoutGroup) > [guide, progress].
             // Matching on text content broke as soon as the text became something computed
             // here rather than passed in.
@@ -341,21 +330,19 @@ namespace DolocQuestTracker
                 progress.gameObject.SetActive(false);
             }
 
-            ContentSizeFitter fitter = tip.GetComponent<ContentSizeFitter>();
-            if (fitter == null)
-            {
-                fitter = tip.gameObject.AddComponent<ContentSizeFitter>();
-            }
+            ContentSizeFitter fitter =
+                DolocUtils.GetOrCreateComponent<ContentSizeFitter>(tip.gameObject);
             fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
             fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
-            float budget = tipWidth - PrefabPadding;
+            float width = TipWidth;
+            float budget = width - PrefabPadding;
             if (budget < 40f)
             {
                 budget = 434f;
             }
 
-            tipRect.sizeDelta = new Vector2(tipWidth, tipRect.sizeDelta.y);
+            SetWidth(tipRect, width);
             SetWidth(tip.transform.Find("title") as RectTransform, budget);
             if (rowGroup != null)
             {
@@ -367,81 +354,83 @@ namespace DolocQuestTracker
                 return;
             }
             guide.text = string.Join(Separator, line.Items.ToArray());
-            RectTransform guideRect = guide.rectTransform;
-            float rowHeight;
 
-            if (marquee)
-            {
-                // The layout group has to go: it would reset the position we animate.
-                if (rowGroup != null)
-                {
-                    if (rowGroup.enabled)
-                    {
-                        rowGroup.enabled = false;
-                    }
-                    if (rowGroup.GetComponent<RectMask2D>() == null)
-                    {
-                        rowGroup.gameObject.AddComponent<RectMask2D>();
-                    }
-                }
-
-                guide.enableWordWrapping = false;
-                guide.overflowMode = TextOverflowModes.Overflow;
-                guide.maxVisibleLines = 1;
-
-                float textWidth = guide.GetPreferredValues().x;
-                float rectWidth = textWidth > budget ? textWidth : budget;
-
-                guideRect.anchorMin = new Vector2(1f, 0.5f);
-                guideRect.anchorMax = new Vector2(1f, 0.5f);
-                guideRect.pivot = new Vector2(1f, 0.5f);
-                guideRect.sizeDelta = new Vector2(rectWidth, LineHeight);
-
-                Marquee m = new Marquee();
-                m.Rect = guideRect;
-                m.Start = rectWidth - budget;
-                m.Offset = m.Start;
-                m.PauseLeft = marqueePause;
-                guideRect.anchoredPosition = new Vector2(m.Offset, 0f);
-                marquees.Add(m);
-
-                rowHeight = LineHeight;
-            }
-            else
-            {
-                // TMP only wraps if the width is constrained: the HorizontalLayoutGroup
-                // otherwise grows the rect to the full text width, leaving nothing to wrap
-                // against.
-                guide.enableWordWrapping = true;
-                guide.overflowMode = TextOverflowModes.Ellipsis;
-
-                LayoutElement le = guide.GetComponent<LayoutElement>();
-                if (le == null)
-                {
-                    le = guide.gameObject.AddComponent<LayoutElement>();
-                }
-                le.preferredWidth = budget;
-                le.flexibleWidth = 0f;
-
-                guideRect.sizeDelta = new Vector2(budget, LineHeight * wrapMaxLines);
-                guide.maxVisibleLines = wrapMaxLines;
-                guide.ForceMeshUpdate();
-
-                int used = guide.textInfo != null && guide.textInfo.lineCount > 0
-                    ? guide.textInfo.lineCount
-                    : 1;
-                if (used > wrapMaxLines)
-                {
-                    used = wrapMaxLines;
-                }
-                rowHeight = LineHeight * used;
-                guideRect.sizeDelta = new Vector2(budget, rowHeight);
-            }
+            float rowHeight = marquee
+                ? LayoutScrolling(guide, rowGroup, budget)
+                : LayoutWrapped(guide, budget);
 
             // The root's VerticalLayoutGroup runs with childControlHeight = false, so it reads
             // each child's own rect height and ignores LayoutElement.preferredHeight.
-            SetHeight(guideRect.parent as RectTransform, rowHeight);
+            SetHeight(guide.rectTransform.parent as RectTransform, rowHeight);
             tip.RebuildLayout();
+        }
+
+        /// <summary>One unwrapped line inside a mask, queued for scrolling if it overflows.</summary>
+        private float LayoutScrolling(TMP_Text guide, HorizontalLayoutGroup rowGroup, float budget)
+        {
+            // The layout group has to go: it would reset the position we animate.
+            if (rowGroup != null)
+            {
+                if (rowGroup.enabled)
+                {
+                    rowGroup.enabled = false;
+                }
+                DolocUtils.GetOrCreateComponent<RectMask2D>(rowGroup.gameObject);
+            }
+
+            guide.enableWordWrapping = false;
+            guide.overflowMode = TextOverflowModes.Overflow;
+            guide.maxVisibleLines = 1;
+
+            float textWidth = guide.GetPreferredValues().x;
+            float rectWidth = textWidth > budget ? textWidth : budget;
+
+            RectTransform guideRect = guide.rectTransform;
+            DolocUtils.SetAnchorAndPivot(guideRect, UIAlignmentType.RightMiddle);
+            guideRect.sizeDelta = new Vector2(rectWidth, LineHeight);
+
+            Marquee m = new Marquee();
+            m.Rect = guideRect;
+            m.Start = rectWidth - budget;
+            m.Offset = m.Start;
+            m.PauseLeft = MarqueePause;
+            guideRect.anchoredPosition = new Vector2(m.Offset, 0f);
+
+            // Text that fits gets its one and only position above; only movers need ticking.
+            if (m.Start > 0.5f)
+            {
+                marquees.Add(m);
+            }
+            return LineHeight;
+        }
+
+        /// <summary>TMP wrapping over at most WrapMaxLines lines, then ellipsised.</summary>
+        private float LayoutWrapped(TMP_Text guide, float budget)
+        {
+            // TMP only wraps if the width is constrained: the HorizontalLayoutGroup otherwise
+            // grows the rect to the full text width, leaving nothing to wrap against.
+            guide.enableWordWrapping = true;
+            guide.overflowMode = TextOverflowModes.Ellipsis;
+
+            LayoutElement le = DolocUtils.GetOrCreateComponent<LayoutElement>(guide.gameObject);
+            le.preferredWidth = budget;
+            le.flexibleWidth = 0f;
+
+            RectTransform guideRect = guide.rectTransform;
+            guideRect.sizeDelta = new Vector2(budget, LineHeight * WrapMaxLines);
+            guide.maxVisibleLines = WrapMaxLines;
+            guide.ForceMeshUpdate();
+
+            int used = guide.textInfo != null && guide.textInfo.lineCount > 0
+                ? guide.textInfo.lineCount
+                : 1;
+            if (used > WrapMaxLines)
+            {
+                used = WrapMaxLines;
+            }
+            float rowHeight = LineHeight * used;
+            guideRect.sizeDelta = new Vector2(budget, rowHeight);
+            return rowHeight;
         }
 
         private static void SetWidth(RectTransform rect, float width)

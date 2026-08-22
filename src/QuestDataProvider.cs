@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using DolocTown;
 using DolocTown.Config;
@@ -29,6 +30,10 @@ namespace DolocQuestTracker
         // we re-read them every build.
         private string cachedL10nId;
 
+        // Resolved once per Build: GetBackpackWithInsideBoxes composes a fresh
+        // LinearInventory[] on every call, and a build asks about a hundred item names.
+        private LinearInventory[] inventory;
+
         /// <summary>
         /// Whether owned counts reach past what the player is carrying.
         ///
@@ -42,14 +47,13 @@ namespace DolocQuestTracker
 
         private int Owned(string itemName)
         {
-            // Both branches include carried boxes; only the room containers differ.
-            // DolocAPI.CountItem(name, false) would be backpack slots alone, which misses them.
-            return DolocAPI.GetBackpackWithInsideBoxes(CountNearbyContainers).CountItem(itemName);
-        }
-
-        internal void ClearCaches()
-        {
-            itemTitles.Clear();
+            // DolocAPI.CountItem(name, false) would be backpack slots alone, which misses
+            // items inside a carried box.
+            if (inventory == null)
+            {
+                return 0;
+            }
+            return inventory.CountItem(itemName);
         }
 
         private string ItemTitle(string itemName)
@@ -112,7 +116,10 @@ namespace DolocQuestTracker
             return handle.cityData.factionMissionManager != null;
         }
 
-        /// <summary>True when the language changed since the last build.</summary>
+        /// <summary>
+        /// True when the language changed since the last call, and drops the title cache when
+        /// it did. One-shot: the caller that observes the change owns the response to it.
+        /// </summary>
         internal bool ConsumeLanguageChange()
         {
             string current;
@@ -140,20 +147,22 @@ namespace DolocQuestTracker
             {
                 return snap;
             }
-            ConsumeLanguageChange();
 
             ArchiveDataHandle handle = DolocAPI.archiveHandle;
-            int money = handle.CurrentMoney;
-
-            BuildFaction(snap, handle, money);
-            BuildSeed(snap, handle);
-
-            snap.Faction.Sort(Compare);
-            snap.Seed.Sort(Compare);
+            inventory = DolocAPI.GetBackpackWithInsideBoxes(CountNearbyContainers);
+            try
+            {
+                BuildFaction(snap, handle);
+                BuildSeed(snap, handle);
+            }
+            finally
+            {
+                inventory = null;   // nothing here outlives the build
+            }
             return snap;
         }
 
-        private void BuildFaction(QuestSnapshot snap, ArchiveDataHandle handle, int money)
+        private void BuildFaction(QuestSnapshot snap, ArchiveDataHandle handle)
         {
             FactionMission[] all = handle.cityData.factionMissionManager.TotalMissions;
             if (all == null)
@@ -184,10 +193,9 @@ namespace DolocQuestTracker
                 e.Kind = QuestKind.Faction;
                 e.Id = proto.Id;
                 e.Title = proto.Title;
-                e.Subtitle = FactionSubtitle(proto);
                 e.RequiredMoney = proto.RequiredMoney;
                 e.MoneyFinished = m.MoneyFinishState;
-                e.HasMoney = money >= proto.RequiredMoney;
+                e.HasMoney = DolocAPI.CanAffordMoney(proto.RequiredMoney);
 
                 FactionItem[] items = m.FactionItems;
                 if (items != null)
@@ -199,14 +207,7 @@ namespace DolocQuestTracker
                         {
                             continue;
                         }
-                        ItemLine line = new ItemLine();
-                        line.ItemName = fi.ItemName;
-                        line.Title = ItemTitle(fi.ItemName);
-                        line.Need = fi.Count;
-                        line.IsFinished = fi.FinishState;
-                        // Already-submitted lines keep Have at Need so ordering stays sane.
-                        line.Have = fi.FinishState ? fi.Count : Owned(fi.ItemName);
-                        e.Lines.Add(line);
+                        e.Lines.Add(MakeLine(fi.ItemName, fi.Count, fi.FinishState));
                     }
                 }
                 snap.Faction.Add(e);
@@ -243,7 +244,6 @@ namespace DolocQuestTracker
                 e.Kind = QuestKind.Seed;
                 e.Id = info.Id;
                 e.Title = ItemTitle(info.Id);   // node id == seed item id
-                e.Subtitle = "";
                 e.RequiredMoney = 0;
                 e.MoneyFinished = true;
                 e.HasMoney = true;
@@ -253,21 +253,39 @@ namespace DolocQuestTracker
                 {
                     for (int k = 0; k < costs.Length; k++)
                     {
-                        ItemLine line = new ItemLine();
-                        line.ItemName = costs[k].itemName;
-                        line.Title = ItemTitle(costs[k].itemName);
-                        line.Need = costs[k].itemCount;
-                        line.IsFinished = false;   // seed research has no per-line state
-                        line.Have = Owned(costs[k].itemName);
-                        e.Lines.Add(line);
+                        // Seed research keeps no per-line submitted state, so nothing here is
+                        // ever "already handed in".
+                        e.Lines.Add(MakeLine(costs[k].itemName, costs[k].itemCount, false));
                     }
                 }
                 snap.Seed.Add(e);
             }
         }
 
-        private static string FactionSubtitle(FactionMissionInfo proto)
+        private ItemLine MakeLine(string itemName, int need, bool finished)
         {
+            ItemLine line = new ItemLine();
+            line.ItemName = itemName;
+            line.Title = ItemTitle(itemName);
+            line.Need = need;
+            line.IsFinished = finished;
+            // Already-submitted lines keep Have at Need so ordering stays sane.
+            line.Have = finished ? need : Owned(itemName);
+            return line;
+        }
+
+        /// <summary>
+        /// "&lt;faction&gt; · &lt;category&gt;" for the diagnostics dump. Resolved on demand rather
+        /// than stored on the entry: it is two table lookups per mission and nothing on screen
+        /// shows it.
+        /// </summary>
+        internal static string FactionSubtitle(string missionId)
+        {
+            FactionMissionInfo proto = DolocConfig.Tables.TbFactionMission.GetOrDefault(missionId);
+            if (proto == null)
+            {
+                return "";
+            }
             string main = "";
             string sub = "";
             FactionTypeInfo mainInfo = DolocConfig.Tables.TbFactionType.GetOrDefault(proto.MainSeries);
@@ -288,8 +306,12 @@ namespace DolocQuestTracker
             return main + sub;
         }
 
-        /// <summary>Submittable first, then fewest missing items, then title.</summary>
-        private static int Compare(QuestEntry a, QuestEntry b)
+        /// <summary>
+        /// Submittable first, then fewest missing items, then title. Ordering is a display
+        /// concern, so the snapshot is left in table order and this is applied by whoever
+        /// presents it -- today only the diagnostics dump.
+        /// </summary>
+        internal static int Compare(QuestEntry a, QuestEntry b)
         {
             if (a.IsSubmittable != b.IsSubmittable)
             {
@@ -305,7 +327,7 @@ namespace DolocQuestTracker
             {
                 return byOpen;
             }
-            return string.Compare(a.Title, b.Title, System.StringComparison.Ordinal);
+            return string.Compare(a.Title, b.Title, StringComparison.Ordinal);
         }
     }
 }

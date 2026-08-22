@@ -28,19 +28,8 @@ namespace DolocQuestTracker
 
         // Settled values, not worth a config entry each.
         private const float OffsetX = -12f;          // matches the game tips' right margin
-        private const float MarqueeWidth = 460f;     // scrolling: no reason to go wider
-        private const float WrapWidth = 700f;        // wrapping: needs the room
-        private const float MarqueeSpeed = 35f;      // px/s
-        private const float MarqueePause = 2f;       // s held at each end
-        private const int WrapMaxLines = 3;
-        private const float RowSpacing = 8f;
         private const float RefreshInterval = 3f;    // s between inventory recounts
 
-
-        // Development aid, not a config entry: a player has no use for it.
-        private const bool ShowSubmittedLines = false;
-
-        private static ConfigEntry<string> cfgWatchlist;
         private static ConfigEntry<float> cfgOffsetY;
         private static ConfigEntry<Key> cfgDumpKey;
 
@@ -54,28 +43,30 @@ namespace DolocQuestTracker
         private static bool prevDumpKey;
         private static double nextRefreshDueAt;
         private static bool snapshotDirty = true;
+        private static bool renderDirty = true;
         private static string lastRenderSignature = "";
         private static string lastBuildBlocker = "";
+
+        // The tip manager's CanvasGroup never changes for a given manager instance, and
+        // GameTipsVisible runs every frame.
+        private static MissionTipManager cachedTips;
+        private static CanvasGroup cachedTipsGroup;
 
         internal static long PumpCount;
 
         internal static void Init(
             ConfigEntry<string> watchlistStore,
             ConfigEntry<float> offsetY,
-            ConfigEntry<bool> useMarquee,
-            ConfigEntry<bool> countNearbyContainers,
+            bool useMarquee,
+            bool countNearbyContainers,
             ConfigEntry<Key> dumpKey)
         {
-            cfgWatchlist = watchlistStore;
             cfgOffsetY = offsetY;
             cfgDumpKey = dumpKey;
 
-            provider.CountNearbyContainers = countNearbyContainers.Value;
+            provider.CountNearbyContainers = countNearbyContainers;
             watchlist = new Watchlist(watchlistStore);
-
-            bool marquee = useMarquee.Value;
-            overlay.Configure(marquee ? MarqueeWidth : WrapWidth, WrapMaxLines, RowSpacing,
-                marquee, MarqueeSpeed, MarqueePause);
+            overlay.Configure(useMarquee);
 
             initialized = true;
             Diag.Info("Core initialized. watchlist=\"" + watchlist.Raw + "\"");
@@ -95,6 +86,7 @@ namespace DolocQuestTracker
         internal static void InvalidateRender()
         {
             lastRenderSignature = "";
+            renderDirty = true;
         }
 
         /// <summary>Pumped from the BodyController.Update postfix.</summary>
@@ -139,10 +131,16 @@ namespace DolocQuestTracker
             // Follow the game's own mission-tip stack so we appear and disappear with it:
             // dialogue, menus and cutscenes hide it, and no single state flag covers all of
             // those (IsNormalState stays true during dialogue).
-            overlay.SetVisible(GameTipsVisible());
+            bool tipsVisible = GameTipsVisible();
+            overlay.SetVisible(tipsVisible);
+            if (tipsVisible)
+            {
+                UpdateOverlay();
+                overlay.Tick(Time.deltaTime);
+            }
 
-            UpdateOverlay();
-            overlay.Tick(Time.deltaTime);
+            // Outside the guard: the panel checkboxes read CurrentSnapshot for the cap, and
+            // they are used while the overlay is hidden behind the panel.
             RefreshSnapshot(false);
         }
 
@@ -178,9 +176,11 @@ namespace DolocQuestTracker
             snapshotDirty = false;
 
             // A language switch changes every visible string, so the cached render signature
-            // would otherwise match and the overlay would keep the old text.
+            // would otherwise match and the overlay would keep the old text. This is the only
+            // place the latch is consumed.
             bool languageChanged = provider.ConsumeLanguageChange();
             snapshot = provider.Build();
+            renderDirty = true;
             if (languageChanged)
             {
                 InvalidateRender();
@@ -189,9 +189,8 @@ namespace DolocQuestTracker
 
         private static void UpdateOverlay()
         {
-            Vector2 offset = new Vector2(OffsetX, cfgOffsetY.Value);
             string blocker;
-            if (!overlay.TryBuild(offset, out blocker))
+            if (!overlay.TryBuild(out blocker))
             {
                 if (blocker != lastBuildBlocker)
                 {
@@ -200,7 +199,16 @@ namespace DolocQuestTracker
                 }
                 return;
             }
-            overlay.SetOffset(offset);
+            overlay.SetOffset(new Vector2(OffsetX, cfgOffsetY.Value));
+
+            // The tip text can only change when the snapshot is rebuilt or the watchlist is
+            // edited, both of which set renderDirty. Reset it after TryBuild so nothing is
+            // lost while the overlay is still waiting on the game.
+            if (!renderDirty)
+            {
+                return;
+            }
+            renderDirty = false;
 
             List<QuestEntry> tracked = watchlist.Resolve(snapshot);
             List<TipLine> lines = new List<TipLine>();
@@ -209,7 +217,8 @@ namespace DolocQuestTracker
                 lines.Add(BuildTipLine(tracked[i]));
             }
 
-            // Render recycles every tip, so only redraw when something actually changed.
+            // Render recycles every tip, so only redraw when something actually changed --
+            // otherwise a refresh that found nothing new would restart the scroll.
             string signature = Signature(lines);
             if (signature != lastRenderSignature)
             {
@@ -225,20 +234,13 @@ namespace DolocQuestTracker
         private static TipLine BuildTipLine(QuestEntry e)
         {
             List<string> items = new List<string>();
-            int open = 0;
-            int satisfied = 0;
 
             for (int i = 0; i < e.Lines.Count; i++)
             {
                 ItemLine l = e.Lines[i];
-                if (l.IsFinished && !ShowSubmittedLines)
+                if (l.IsFinished)
                 {
                     continue;
-                }
-                open++;
-                if (l.IsSatisfied)
-                {
-                    satisfied++;
                 }
                 items.Add(Chunk(l.IsSatisfied ? ColorSatisfied : ColorShort,
                     l.Title + " " + l.Have + "/" + l.Need));
@@ -246,15 +248,10 @@ namespace DolocQuestTracker
 
             if (e.RequiredMoney > 0 && !e.MoneyFinished)
             {
-                open++;
-                if (e.HasMoney)
-                {
-                    satisfied++;
-                }
                 items.Add(Chunk(e.HasMoney ? ColorSatisfied : ColorShort, MoneyLabel(e.RequiredMoney)));
             }
 
-            string accent = (open > 0 && satisfied == open) ? ColorSatisfied : ColorShort;
+            string accent = (items.Count > 0 && e.IsSubmittable) ? ColorSatisfied : ColorShort;
             return new TipLine(e.Title, items, accent);
         }
 
@@ -286,7 +283,7 @@ namespace DolocQuestTracker
         /// </summary>
         private static string Chunk(string colorHex, string body)
         {
-            return "<nobr><color=" + colorHex + ">" + body + "</color></nobr>";
+            return "<nobr>" + DolocUtils.Colored(body, colorHex) + "</nobr>";
         }
 
         private static string Signature(List<TipLine> lines)
@@ -318,8 +315,14 @@ namespace DolocQuestTracker
                 {
                     return false;
                 }
-                CanvasGroup group = tips.GetComponentInParent<CanvasGroup>();
-                return group == null || group.alpha >= 0.01f;
+                // Unity-null on a destroyed manager forces a re-resolve rather than leaving a
+                // stale CanvasGroup behind.
+                if (cachedTips == null || !ReferenceEquals(tips, cachedTips))
+                {
+                    cachedTips = tips;
+                    cachedTipsGroup = tips.GetComponentInParent<CanvasGroup>();
+                }
+                return cachedTipsGroup == null || cachedTipsGroup.alpha >= 0.01f;
             }
             catch
             {
@@ -366,7 +369,7 @@ namespace DolocQuestTracker
                 sb.AppendLine("dataReady     = " + QuestDataProvider.IsReady());
                 sb.AppendLine("overlayBuilt  = " + overlay.IsBuilt + " liveTips=" + overlay.LiveCount);
                 sb.AppendLine("blocker       = " + lastBuildBlocker);
-                sb.AppendLine("watchlist     = \"" + cfgWatchlist.Value + "\"");
+                sb.AppendLine("watchlist     = \"" + watchlist.Raw + "\"");
 
                 if (QuestDataProvider.IsReady())
                 {
@@ -390,11 +393,20 @@ namespace DolocQuestTracker
         private static void AppendSection(StringBuilder sb, string label, List<QuestEntry> list)
         {
             sb.AppendLine(string.Format("--- {0} ({1}) ---", label, list.Count));
-            for (int i = 0; i < list.Count; i++)
+
+            // Most urgent first, on a copy: the snapshot itself has no meaningful order and
+            // nothing else depends on one.
+            List<QuestEntry> ordered = new List<QuestEntry>(list);
+            ordered.Sort(QuestDataProvider.Compare);
+
+            for (int i = 0; i < ordered.Count; i++)
             {
-                QuestEntry e = list[i];
+                QuestEntry e = ordered[i];
+                string subtitle = e.Kind == QuestKind.Faction
+                    ? QuestDataProvider.FactionSubtitle(e.Id)
+                    : "";
                 sb.AppendLine(string.Format("[{0}] {1}{2}{3}", e.Key, e.Title,
-                    e.Subtitle.Length > 0 ? "  (" + e.Subtitle + ")" : "",
+                    subtitle.Length > 0 ? "  (" + subtitle + ")" : "",
                     e.IsSubmittable ? "  << SUBMITTABLE" : ""));
                 for (int k = 0; k < e.Lines.Count; k++)
                 {

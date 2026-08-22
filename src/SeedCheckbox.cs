@@ -6,12 +6,11 @@ using DolocTown.GameData;   // ArchiveOperationFarm extension methods
 using DolocTown.UI;
 using HarmonyLib;
 using UnityEngine;
-using UnityEngine.UI;
 
 namespace DolocQuestTracker
 {
     /// <summary>
-    /// Adds a tracking toggle to each box in the seed research panel.
+    /// Puts a tracking toggle on each box in the seed research panel.
     ///
     /// Unlike the faction viewer this is a grid (SeedUnLockPanel :
     /// DolocPagedGridUI&lt;SeedUINode, SeedUnLockData&gt;), so every visible slot gets its own
@@ -20,6 +19,8 @@ namespace DolocQuestTracker
     ///
     /// Already-unlocked seeds are skipped: the game marks those with its own badge and there
     /// is nothing left to track.
+    ///
+    /// The switch itself, and what a click on it does, belong to ToggleWidget.
     /// </summary>
     internal static class SeedCheckbox
     {
@@ -27,8 +28,8 @@ namespace DolocQuestTracker
 
         private static readonly List<ToggleItemUI> toggles = new List<ToggleItemUI>();
         private static readonly List<string> slotIds = new List<string>();
+        private static FieldInfo seedListField;
         private static SeedUINode[] slots;
-        private static bool suppressCallback;
 
         internal static void OnPanelRegistered(SeedUnLockUiState state)
         {
@@ -46,9 +47,12 @@ namespace DolocQuestTracker
         internal static void OnPageFilled(SeedUnLockUiState state, int start, int count)
         {
             slotIds.Clear();
-            FieldInfo field = AccessTools.Field(typeof(SeedUnLockUiState), "seedList");
-            List<SeedUnlockInfo> list = field != null
-                ? field.GetValue(state) as List<SeedUnlockInfo>
+            if (seedListField == null)
+            {
+                seedListField = AccessTools.Field(typeof(SeedUnLockUiState), "seedList");
+            }
+            List<SeedUnlockInfo> list = seedListField != null
+                ? seedListField.GetValue(state) as List<SeedUnlockInfo>
                 : null;
 
             for (int i = 0; i < count; i++)
@@ -97,9 +101,8 @@ namespace DolocQuestTracker
                     continue;
                 }
 
-                ToggleItemUI toggle;
-                ToggleWidget.Create(parent, ObjectName,
-                    new Vector2(110f, 32f), new Vector2(-8f, -8f), out toggle);
+                ToggleItemUI toggle = ToggleWidget.Create(parent, ObjectName,
+                    new Vector2(110f, 32f), new Vector2(-8f, -8f));
                 if (toggle != null)
                 {
                     int captured = i;
@@ -111,7 +114,7 @@ namespace DolocQuestTracker
 
         private static void OnToggled(int slotIndex)
         {
-            if (suppressCallback)
+            if (ToggleWidget.Suppressed)
             {
                 return;
             }
@@ -120,12 +123,7 @@ namespace DolocQuestTracker
             {
                 return;
             }
-            string key = WatchKey.Format(QuestKind.Seed, id);
-            if (!Core.List.Toggle(key, Core.CurrentSnapshot))
-            {
-                Diag.Info("Watchlist full (" + Watchlist.MaxTracked + "), ignored: " + key);
-            }
-            Core.InvalidateRender();
+            ToggleWidget.Commit(WatchKey.Format(QuestKind.Seed, id));
             Refresh();
         }
 
@@ -156,25 +154,12 @@ namespace DolocQuestTracker
                     && slots[i].gameObject.activeInHierarchy;
                 bool applicable = slotActive && id != null && !Unlocked(id);
 
-                if (toggle.gameObject.activeSelf != applicable)
-                {
-                    toggle.gameObject.SetActive(applicable);
-                }
+                toggle.SetVisible(applicable);
                 if (!applicable)
                 {
                     continue;
                 }
-
-                bool tracked = Core.List.Contains(WatchKey.Format(QuestKind.Seed, id));
-                suppressCallback = true;
-                toggle.InitValue(tracked, false);
-                suppressCallback = false;
-
-                Selectable selectable = toggle.selectable;
-                if (selectable != null)
-                {
-                    selectable.interactable = tracked || Core.List.CanAdd(Core.CurrentSnapshot);
-                }
+                ToggleWidget.ApplyState(toggle, WatchKey.Format(QuestKind.Seed, id));
             }
         }
 
@@ -196,14 +181,8 @@ namespace DolocQuestTracker
     {
         private static void Postfix(SeedUnLockUiState __instance)
         {
-            try
-            {
-                SeedCheckbox.OnPanelRegistered(__instance);
-            }
-            catch (System.Exception e)
-            {
-                Diag.Error("Seed toggle register failed: " + e);
-            }
+            Diag.Guard("Seed toggle register",
+                delegate { SeedCheckbox.OnPanelRegistered(__instance); });
         }
     }
 
@@ -212,14 +191,9 @@ namespace DolocQuestTracker
     {
         private static void Postfix(SeedUnLockUiState __instance, int start, SeedUnLockData[] __result)
         {
-            try
-            {
-                SeedCheckbox.OnPageFilled(__instance, start, __result != null ? __result.Length : 0);
-            }
-            catch (System.Exception e)
-            {
-                Diag.Error("Seed toggle page refresh failed: " + e);
-            }
+            int count = __result != null ? __result.Length : 0;
+            Diag.Guard("Seed toggle page refresh",
+                delegate { SeedCheckbox.OnPageFilled(__instance, start, count); });
         }
     }
 }

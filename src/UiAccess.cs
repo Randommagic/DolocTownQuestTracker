@@ -1,14 +1,15 @@
-using System;
 using System.Reflection;
+using HarmonyLib;
 using UnityEngine;
 
 namespace DolocQuestTracker
 {
     /// <summary>
-    /// Reaches the panel behind a UI state. DolocUiState&lt;TPanel&gt; keeps it as
-    /// `protected TPanel panel { get; private set; }`, so it is read by walking the type
-    /// chain rather than named directly -- the two states we hook sit at different depths
-    /// (DolocUiState vs PageUiStateBase).
+    /// Reaches the panel behind a UI state. DolocUiState&lt;TPanel&gt; declares it as
+    /// `protected TPanel panel { get; private set; }`, so there is no public seam and the
+    /// plugin cannot subclass into the game's state hierarchy -- reflection is the only way in.
+    /// AccessTools.Property already searches base types, which is what both hooked states need
+    /// (SeedUnLockUiState reaches it through PageUiStateBase).
     /// </summary>
     internal static class UiAccess
     {
@@ -18,26 +19,12 @@ namespace DolocQuestTracker
             {
                 return null;
             }
-            Type t = uiState.GetType();
-            while (t != null)
+            PropertyInfo p = AccessTools.Property(uiState.GetType(), "panel");
+            if (p == null)
             {
-                PropertyInfo p = t.GetProperty("panel",
-                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
-                    | BindingFlags.DeclaredOnly);
-                if (p != null)
-                {
-                    return p.GetValue(uiState, null) as T;
-                }
-                FieldInfo f = t.GetField("panel",
-                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
-                    | BindingFlags.DeclaredOnly);
-                if (f != null)
-                {
-                    return f.GetValue(uiState) as T;
-                }
-                t = t.BaseType;
+                return null;
             }
-            return null;
+            return p.GetValue(uiState, null) as T;
         }
     }
 }

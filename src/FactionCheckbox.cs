@@ -1,31 +1,28 @@
+using System.Reflection;
 using DolocTown;
 using DolocTown.UI;
 using HarmonyLib;
 using UnityEngine;
-using UnityEngine.UI;
 
 namespace DolocQuestTracker
 {
     /// <summary>
-    /// Adds a tracking toggle to the game's faction mission panel.
+    /// Puts a tracking toggle on the game's faction mission panel.
     ///
     /// The panel is a single-mission viewer (FactionMissionViewer : DolocSinglePageUI), not a
     /// list, so one toggle reflects whichever mission is paged into view. Selection changes
     /// ride on OnMissionSelect, which the panel already calls; currentMission is private so it
     /// is read with AccessTools.
     ///
-    /// The widget is a clone of the game's own settings toggle
-    /// (UI_ELEMENT_SETTING_TOGGLE / ToggleItemUI), trimmed down to just the switch -- the
-    /// prefab is a full 860x72 settings row with a 723px label and a 932px divider.
+    /// The switch itself, and what a click on it does, belong to ToggleWidget.
     /// </summary>
     internal static class FactionCheckbox
     {
         private const string ObjectName = "DQT_TrackToggle";
 
+        private static FieldInfo currentMissionField;
         private static FactionMission current;
-        private static GameObject widget;
         private static ToggleItemUI toggle;
-        private static bool suppressCallback;
 
         internal static void OnPanelRegistered(FactionMissionUiState state)
         {
@@ -41,8 +38,13 @@ namespace DolocQuestTracker
 
         internal static void OnMissionChanged(FactionMissionUiState state)
         {
-            current = AccessTools.Field(typeof(FactionMissionUiState), "currentMission")
-                .GetValue(state) as FactionMission;
+            if (currentMissionField == null)
+            {
+                currentMissionField = AccessTools.Field(typeof(FactionMissionUiState), "currentMission");
+            }
+            current = currentMissionField != null
+                ? currentMissionField.GetValue(state) as FactionMission
+                : null;
             Refresh();
         }
 
@@ -58,8 +60,8 @@ namespace DolocQuestTracker
 
         private static void EnsureWidget(FactionMissionViewer viewer)
         {
-            // Unity-null covers a destroyed widget, so a rebuilt panel gets a fresh one.
-            if (widget != null)
+            // Unity-null covers a destroyed toggle, so a rebuilt panel gets a fresh one.
+            if (toggle != null)
             {
                 return;
             }
@@ -69,60 +71,39 @@ namespace DolocQuestTracker
                 return;
             }
 
-            widget = ToggleWidget.Create(parent, ObjectName,
-                new Vector2(240f, 40f), new Vector2(-12f, -8f), out toggle);
-            if (toggle == null)
+            toggle = ToggleWidget.Create(parent, ObjectName,
+                new Vector2(240f, 40f), new Vector2(-12f, -8f));
+            if (toggle != null)
             {
-                return;
+                toggle.onValueChanged.AddListener(OnToggled);
             }
-            toggle.onValueChanged.AddListener(OnToggled);
         }
 
         private static void OnToggled(bool value)
         {
-            if (suppressCallback || current == null || !current.IsValid)
+            if (ToggleWidget.Suppressed || current == null || !current.IsValid)
             {
                 return;
             }
-            string key = WatchKey.Format(QuestKind.Faction, current.Proto.Id);
-            if (!Core.List.Toggle(key, Core.CurrentSnapshot))
-            {
-                Diag.Info("Watchlist full (" + Watchlist.MaxTracked + "), ignored: " + key);
-            }
-            Core.InvalidateRender();
+            ToggleWidget.Commit(WatchKey.Format(QuestKind.Faction, current.Proto.Id));
             Refresh();
         }
 
         private static void Refresh()
         {
-            if (toggle == null || widget == null)
+            if (toggle == null)
             {
                 return;
             }
 
             // Nothing to track on a finished mission.
             bool applicable = current != null && current.IsValid && !current.IsComplete;
-            if (widget.activeSelf != applicable)
-            {
-                widget.SetActive(applicable);
-            }
+            toggle.SetVisible(applicable);
             if (!applicable)
             {
                 return;
             }
-
-            bool tracked = Core.List.Contains(WatchKey.Format(QuestKind.Faction, current.Proto.Id));
-            suppressCallback = true;
-            toggle.InitValue(tracked, false);
-            suppressCallback = false;
-
-            // At the cap, an untracked mission's switch is greyed out rather than accepting a
-            // click and snapping back, which read as a glitch.
-            Selectable selectable = toggle.selectable;
-            if (selectable != null)
-            {
-                selectable.interactable = tracked || Core.List.CanAdd(Core.CurrentSnapshot);
-            }
+            ToggleWidget.ApplyState(toggle, WatchKey.Format(QuestKind.Faction, current.Proto.Id));
         }
     }
 
@@ -131,14 +112,8 @@ namespace DolocQuestTracker
     {
         private static void Postfix(FactionMissionUiState __instance)
         {
-            try
-            {
-                FactionCheckbox.OnPanelRegistered(__instance);
-            }
-            catch (System.Exception e)
-            {
-                Diag.Error("Faction toggle register failed: " + e);
-            }
+            Diag.Guard("Faction toggle register",
+                delegate { FactionCheckbox.OnPanelRegistered(__instance); });
         }
     }
 
@@ -147,14 +122,8 @@ namespace DolocQuestTracker
     {
         private static void Postfix(FactionMissionUiState __instance)
         {
-            try
-            {
-                FactionCheckbox.OnMissionChanged(__instance);
-            }
-            catch (System.Exception e)
-            {
-                Diag.Error("Faction toggle select failed: " + e);
-            }
+            Diag.Guard("Faction toggle select",
+                delegate { FactionCheckbox.OnMissionChanged(__instance); });
         }
     }
 }

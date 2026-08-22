@@ -11,10 +11,10 @@ namespace DolocQuestTracker
     /// Holds no per-frame logic -- see Core for why the MonoBehaviour cannot be trusted to
     /// keep receiving Unity messages in this game.
     ///
-    /// Only settings a player has a real reason to change are exposed. Everything else that
-    /// used to live here (offset X, width, scroll speed and pause, wrapped line count, refresh
-    /// interval, preview and submitted-line debug flags) is a settled value and now a constant
-    /// in Core -- nobody edits a .cfg to tune a scroll speed.
+    /// Only settings a player has a real reason to change are exposed. Everything else is a
+    /// settled value and now a constant next to the code that uses it -- the offset X and
+    /// refresh interval in Core, the widths, scroll speed, pause and wrapped line count in
+    /// TipOverlay. Nobody edits a .cfg to tune a scroll speed.
     /// </summary>
     [BepInPlugin(PluginInfo.Guid, PluginInfo.Name, PluginInfo.Version)]
     [BepInProcess(PluginInfo.ProcessName)]
@@ -49,7 +49,8 @@ namespace DolocQuestTracker
 
             Config.Save();
 
-            Core.Init(cfgWatchlist, cfgOffsetY, cfgMarquee, cfgCountBoxes, cfgDumpKey);
+            // Marquee and CountNearbyContainers are read once; the other two are live.
+            Core.Init(cfgWatchlist, cfgOffsetY, cfgMarquee.Value, cfgCountBoxes.Value, cfgDumpKey);
 
             try
             {

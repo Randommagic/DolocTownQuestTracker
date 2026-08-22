@@ -41,29 +41,27 @@ namespace DolocQuestTracker
         public QuestKind Kind;
         public string Id;                 // "vulture_mineral" / "seed_tomato"
         public string Title;
-        public string Subtitle;           // faction: "<faction> · <category>", seed: ""
         public List<ItemLine> Lines = new List<ItemLine>();
         public int RequiredMoney;         // faction only, 0 when unused
         public bool MoneyFinished;
+        public bool HasMoney;             // filled by the provider (can the player pay now)
 
-        /// <summary>Stable key used in the watchlist config: "faction:id" / "seed:id".</summary>
+        private string keyCache;
+
+        /// <summary>
+        /// Stable key used in the watchlist config: "faction:id" / "seed:id". Cached because
+        /// Find() reads it for every entry it walks, and Kind/Id never change after the
+        /// provider fills them in.
+        /// </summary>
         public string Key
-        {
-            get { return WatchKey.Format(Kind, Id); }
-        }
-
-        /// <summary>Lines that still need action (submitted ones drop out).</summary>
-        public IEnumerable<ItemLine> OpenLines
         {
             get
             {
-                for (int i = 0; i < Lines.Count; i++)
+                if (keyCache == null)
                 {
-                    if (!Lines[i].IsFinished)
-                    {
-                        yield return Lines[i];
-                    }
+                    keyCache = WatchKey.Format(Kind, Id);
                 }
+                return keyCache;
             }
         }
 
@@ -99,8 +97,6 @@ namespace DolocQuestTracker
             }
         }
 
-        public bool HasMoney;   // filled by the provider (CurrentMoney >= RequiredMoney)
-
         /// <summary>Total missing item count across open lines — used for ordering.</summary>
         public int TotalShortfall
         {
@@ -120,11 +116,6 @@ namespace DolocQuestTracker
     {
         public List<QuestEntry> Faction = new List<QuestEntry>();
         public List<QuestEntry> Seed = new List<QuestEntry>();
-
-        public int TotalCount
-        {
-            get { return Faction.Count + Seed.Count; }
-        }
 
         public QuestEntry Find(string key)
         {
