@@ -1,13 +1,13 @@
+using System;
 using System.Collections.Generic;
 using System.Text;
-using BepInEx.Configuration;
 
 namespace DolocTownQuestTracker
 {
     /// <summary>
     /// The set of entries the overlay shows, kept per save.
     ///
-    /// BepInEx config is one file for the whole game, so every save's selections share a
+    /// The config file is one file for the whole game, so every save's selections share a
     /// single string, grouped by save slot:
     ///
     ///     0/1786903040=faction:vulture_fossil,seed:seed_tomato;2/1787376658=faction:x
@@ -27,9 +27,6 @@ namespace DolocTownQuestTracker
     {
         internal const int MaxTracked = 5;
 
-        /// <summary>Shape of the stored string, for the config file's own comment.</summary>
-        internal const string StoredFormat = "slot/save=faction:id,seed:id;slot/save=...";
-
         private const char SlotSeparator = ';';
         private const char HeaderSeparator = '=';
         private const char SaveSeparator = '/';
@@ -41,19 +38,26 @@ namespace DolocTownQuestTracker
             internal readonly List<string> Keys = new List<string>();
         }
 
-        private readonly ConfigEntry<string> store;
+        private readonly ModConfig config;
+        private readonly Action persist;
         private readonly Dictionary<int, Slot> slots = new Dictionary<int, Slot>();
 
-        internal Watchlist(ConfigEntry<string> store)
+        /// <summary>
+        /// <paramref name="persist"/> writes the whole config out. DTMAPI does not save on
+        /// assignment the way a BepInEx ConfigEntry did, so every mutation here has to ask for
+        /// it explicitly.
+        /// </summary>
+        internal Watchlist(ModConfig config, Action persist)
         {
-            this.store = store;
+            this.config = config;
+            this.persist = persist;
             Load();
         }
 
         /// <summary>
         /// The loaded save's list, or null when no save is open.
         ///
-        /// Resolved on every call rather than cached: the plugin starts long before a save
+        /// Resolved on every call rather than cached: the mod starts long before a save
         /// exists, the panel patches fire independently of Core's tick, and the player can
         /// switch saves without anything telling us. Pulling here means the answer is right on
         /// the first call whenever it happens, with no initialisation order to get wrong.
@@ -98,7 +102,7 @@ namespace DolocTownQuestTracker
         {
             slots.Clear();
 
-            string raw = store.Value;
+            string raw = config.Watchlist;
             if (string.IsNullOrEmpty(raw))
             {
                 return;
@@ -181,7 +185,8 @@ namespace DolocTownQuestTracker
                     sb.Append(slot.Keys[k]);
                 }
             }
-            store.Value = sb.ToString();
+            config.Watchlist = sb.ToString();
+            persist();
         }
 
         internal bool Contains(string key)
@@ -262,7 +267,7 @@ namespace DolocTownQuestTracker
         /// Drops ids that no longer exist in the game's data at all -- a renamed or removed
         /// mission after a patch -- and ids the snapshot just saw finished. Runs on every
         /// toggle rather than once at load because the game's config tables (and the archive
-        /// handle the snapshot needs) are not populated yet while the plugin is starting up.
+        /// handle the snapshot needs) are not populated yet while the mod is starting up.
         ///
         /// Deliberately NOT pruning everything merely absent from the snapshot: absent also
         /// covers "not unlocked yet", which must stay watched. snapshot.Finished is the
@@ -289,7 +294,7 @@ namespace DolocTownQuestTracker
 
         internal string Raw
         {
-            get { return store.Value; }
+            get { return config.Watchlist; }
         }
     }
 }

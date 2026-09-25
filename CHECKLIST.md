@@ -37,17 +37,44 @@
       검증한 시나리오: 세이브별 분리 / 복제본 빈 목록 / 복제본→원본 복귀 /
       삭제 후 같은 자리 새 게임 / 구 평문 형식 이관.
       `archiveIndex`가 파일명 번호와 일치하는 것도 확인됨
-- [x] **설정 파일 잔여 항목 정리** — GUID가 `randommagic.doloctownquesttracker`로 바뀌면서
+- [x] **설정 파일 잔여 항목 정리** — GUID가 `Randommagic.doloctownquesttracker`로 바뀌면서
       cfg 파일이 새로 생성되므로 죽은 키(`ListKey`, `OverlayToggleKey`, `DebugDumpKey`,
       `Verbose`, `Width`, `MaxLines` 등)가 자연히 사라짐
 - [x] **워크샵 패키지 골격** — `workshop/` + `package.ps1`.
       게임에 설치된 창작마당 항목들을 뜯어 형식 확인
       (`info.json` / `workshop.json` / `icon.png` / `preview.png` / `Content/`)
 - [x] **아이콘·미리보기 이미지** — `workshop/icon.png`, `workshop/preview.png` 추가 완료
-- [ ] **최초 업로드 후 `workshop_id` 기록** — 업로드하면 발급되는 id를
-      `workshop/workshop.json`에 적어야 이후 갱신이 같은 항목으로 올라감
-- [ ] **BepInEx 동반 배포 여부 결정** — 현재는 DLL만 배포하고 DTMAPI 구독을
-      선행 조건으로 안내. 미니맵 모드처럼 BepInEx 포함본을 따로 낼지는 미정
+- [x] **최초 업로드 후 `workshop_id` 기록** — 2026-08-22 발행, **`3787985009`**.
+      게임이 `ModInfo.SetWorkshopId`로 `MODS\<폴더>\workshop.json`을 직접 써주므로
+      그 파일을 그대로 `workshop/workshop.json`에 가져왔다. 업로드 전후로 `info.json`은
+      다시 쓰이지 않았고, 모드 목록 제목이 `퀘스트 트래커`로 잡혀
+      `localized_name.koreana`가 실제 표시에 쓰인다는 것도 확인됨
+- [ ] **항목 페이지 설명 작성** — 구독 → Mods 화면 활성화 → 재시작 단계를
+      `info.json`이 아니라 Steam 항목 페이지 설명에 적는다
+- [ ] **구독본으로 검증** — 자기 항목을 구독하면 같은 `UniqueID`가 두 벌이 되어
+      DTMAPI가 막는다(`multiple enabled official candidates ... blocked`).
+      로컬 `MODS\` 사본을 끄거나 치운 뒤 재시작할 것
+- [x] **DTMAPI CodeMod로 포팅** — BepInEx 플러그인 경로를 버리고 DTMAPI 전용 단일 경로로.
+      `BepInPlugin`→`DtmMod`, `ConfigEntry<T>`→`ModConfig` POCO + `IConfigHelper`,
+      `ManualLogSource`→`IMonitor`, 설정은 DTMAPI 인게임 설정 페이지에 노출.
+      데이터 조사·오버레이·Harmony 패치는 무변경. 규칙 근거는 `PACKAGING.md` 참조
+- [x] **인게임 로드 검증** — 2026-08-22 실기 확인. DTMAPI 로그 근거:
+      `Discovered 3 DTMAPI-capable mod folder(s)` + `source=Local` 경로로 로드,
+      `Official mod id = Local.DolocTownQuestTracker`, `Quest Tracker 1.0.0 loaded.`,
+      `Mod Entry completed.`, `Tip prefab width = 450`(오버레이 구축, 블로커 로그 없음),
+      `ConfigMenuPage:registered=1`(DTMAPI 설정 페이지 등록).
+      설정 왕복도 확인: 시작 시 `Core initialized. watchlist="..."`가 디스크 내용과 일치하고,
+      인게임 토글 한 번에 `Watchlist`에 항목이 추가되며 파일이 갱신된다.
+      경고·에러 0건. 껐던 미니맵 모드가 `Skipping`되는 것으로 DTMAPI의 콜드 스타트
+      활성 판정도 함께 확인됨
+- [x] **끄면 즉시 조용해지게** — DTMAPI는 게임의 Mod 화면을 열면 재검사(`DiscoverMods`)까지
+      하지만 이미 로드된 CodeMod을 내리지는 못한다(`LoadMods hot loadedNow=0`).
+      그래서 화면에 그리는 모드는 끈 뒤에도 계속 보인다. `ModEnablement`가 게임의 라이브
+      상태(`DolocAPI.modManager.GetAllEnabledModInfos()`, 전부 public)를 1초 간격으로 확인해
+      오버레이와 패널 토글을 멈춘다. 소프트 디스에이블이다 — 패치는 붙어 있고 재시작
+      전까지 언로드되지 않는다. 상태를 못 읽으면 켜진 것으로 간주한다(숨는 쪽이 더 나쁨).
+      실기 확인: `Switched off in the Mods page; going quiet.` →
+      `Switched on in the Mods page; resuming.` 재시작 없이 양방향 동작
 - [x] **`/simplify` 실행** — 2회 (2026-08-22). 2회차에서 나왔지만 넘긴 것:
       추적 목록(`slot.Keys`)이 완료 항목을 계속 쌓아 무한히 자라는 문제.
       오래된 것부터 자르면 아직 추적 중인 항목을 해제할 수 있어(삽입 순서상

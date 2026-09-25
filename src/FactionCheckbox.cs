@@ -114,6 +114,10 @@ namespace DolocTownQuestTracker
     {
         private static void Postfix(FactionMissionUiState __instance)
         {
+            if (!Core.IsActive)
+            {
+                return;
+            }
             Diag.Guard("Faction toggle register",
                 delegate { FactionCheckbox.OnPanelRegistered(__instance); });
         }
@@ -124,6 +128,10 @@ namespace DolocTownQuestTracker
     {
         private static void Postfix(FactionMissionUiState __instance)
         {
+            if (!Core.IsActive)
+            {
+                return;
+            }
             Diag.Guard("Faction toggle select",
                 delegate { FactionCheckbox.OnMissionChanged(__instance); });
         }

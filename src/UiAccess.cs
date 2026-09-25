@@ -7,7 +7,7 @@ namespace DolocTownQuestTracker
     /// <summary>
     /// Reaches the panel behind a UI state. DolocUiState&lt;TPanel&gt; declares it as
     /// `protected TPanel panel { get; private set; }`, so there is no public seam and the
-    /// plugin cannot subclass into the game's state hierarchy -- reflection is the only way in.
+    /// mod cannot subclass into the game's state hierarchy -- reflection is the only way in.
     /// AccessTools.Property already searches base types, which is what both hooked states need
     /// (SeedUnLockUiState reaches it through PageUiStateBase).
     /// </summary>

@@ -183,6 +183,10 @@ namespace DolocTownQuestTracker
     {
         private static void Postfix(SeedUnLockUiState __instance)
         {
+            if (!Core.IsActive)
+            {
+                return;
+            }
             Diag.Guard("Seed toggle register",
                 delegate { SeedCheckbox.OnPanelRegistered(__instance); });
         }
@@ -193,6 +197,10 @@ namespace DolocTownQuestTracker
     {
         private static void Postfix(SeedUnLockUiState __instance, int start, SeedUnLockData[] __result)
         {
+            if (!Core.IsActive)
+            {
+                return;
+            }
             int count = __result != null ? __result.Length : 0;
             Diag.Guard("Seed toggle page refresh",
                 delegate { SeedCheckbox.OnPageFilled(__instance, start, count); });

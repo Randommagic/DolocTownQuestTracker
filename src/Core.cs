@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
-using BepInEx.Configuration;
 using DolocTown;
 using DolocTown.Config;
 using DolocTown.UI;
@@ -12,13 +11,13 @@ using UnityEngine.InputSystem.Controls;
 namespace DolocTownQuestTracker
 {
     /// <summary>
-    /// All plugin state and per-frame work, in a plain static class.
+    /// All mod state and per-frame work, in a plain static class.
     ///
-    /// Not on the BaseUnityPlugin MonoBehaviour because in this game that component stops
-    /// receiving Unity messages right after OnEnable -- Start/Update/LateUpdate never fire and
-    /// the instance reads back as Unity-null, i.e. it is destroyed. The Harmony patches keep
-    /// firing, so the pump comes from BodyController.Update and nothing here depends on a live
-    /// component.
+    /// Not on a MonoBehaviour: DTMAPI hands us no component, and the one BepInEx used to give
+    /// stopped receiving Unity messages right after OnEnable in this game anyway -- Start,
+    /// Update and LateUpdate never fired and the instance read back as Unity-null. The Harmony
+    /// patches keep firing, so the pump comes from BodyController.Update and nothing here
+    /// depends on a live component.
     /// </summary>
     internal static class Core
     {
@@ -30,11 +29,11 @@ namespace DolocTownQuestTracker
         private const float OffsetX = -12f;          // matches the game tips' right margin
         private const float RefreshInterval = 3f;    // s between inventory recounts
 
-        private static ConfigEntry<float> cfgOffsetY;
-        private static ConfigEntry<Key> cfgDumpKey;
+        private static ModConfig config;
 
         private static readonly QuestDataProvider provider = new QuestDataProvider();
         private static readonly TipOverlay overlay = new TipOverlay();
+        private static readonly DiagnosticsKey diagnosticsKey = new DiagnosticsKey();
 
         private static QuestSnapshot snapshot = new QuestSnapshot();
         private static Watchlist watchlist;
@@ -54,22 +53,73 @@ namespace DolocTownQuestTracker
 
         internal static long PumpCount;
 
-        internal static void Init(
-            ConfigEntry<string> watchlistStore,
-            ConfigEntry<float> offsetY,
-            bool useMarquee,
-            bool countNearbyContainers,
-            ConfigEntry<Key> dumpKey)
+        internal static void Init(ModConfig cfg, Action save)
         {
-            cfgOffsetY = offsetY;
-            cfgDumpKey = dumpKey;
+            config = cfg;
 
-            provider.CountNearbyContainers = countNearbyContainers;
-            watchlist = new Watchlist(watchlistStore);
-            overlay.Configure(useMarquee);
+            provider.CountNearbyContainers = cfg.CountNearbyContainers;
+            overlay.Configure(cfg.Marquee);
+            watchlist = new Watchlist(cfg, save);
 
             initialized = true;
             Diag.Info("Core initialized. watchlist=\"" + watchlist.Raw + "\"");
+        }
+
+        internal static ModConfig Config
+        {
+            get { return config; }
+        }
+
+        /// <summary>
+        /// False before Entry has run, and while the player has us switched off in the game's
+        /// Mods page. Every patch entry point checks it, so a disabled mod adds no widgets and
+        /// draws nothing.
+        /// </summary>
+        internal static bool IsActive
+        {
+            get { return initialized && ModEnablement.IsEnabled(); }
+        }
+
+        /// <summary>
+        /// Applied from the in-game settings page. Every setting is written through here rather
+        /// than into Config directly, so a caller never has to know which ones need work beyond
+        /// storing the value -- and adding one that does cannot be missed at the call site.
+        /// </summary>
+        internal static void SetOffsetY(float value)
+        {
+            config.OffsetY = value;   // read live by UpdateOverlay
+        }
+
+        internal static void SetDumpKey(string value)
+        {
+            config.DumpKey = value;   // re-resolved by DiagnosticsKey on the next tick
+        }
+
+        internal static void SetMarquee(bool value)
+        {
+            config.Marquee = value;
+            overlay.Configure(value);
+            InvalidateRender();
+        }
+
+        internal static void SetCountNearbyContainers(bool value)
+        {
+            config.CountNearbyContainers = value;
+            provider.CountNearbyContainers = value;
+            snapshotDirty = true;
+        }
+
+        /// <summary>
+        /// Puts every setting back to its shipped value. Not the watchlist: that is per-save
+        /// selection data rather than a setting, and wiping it from a settings reset would be a
+        /// surprise.
+        /// </summary>
+        internal static void ResetToDefaults(ModConfig defaults)
+        {
+            SetOffsetY(defaults.OffsetY);
+            SetDumpKey(defaults.DumpKey);
+            SetMarquee(defaults.Marquee);
+            SetCountNearbyContainers(defaults.CountNearbyContainers);
         }
 
         internal static Watchlist List
@@ -110,11 +160,21 @@ namespace DolocTownQuestTracker
 
         private static void TickInner()
         {
+            // Switched off in the game's Mods page: hide and stop. Checked before the
+            // diagnostics key so a disabled mod really does nothing. Tick has already
+            // confirmed initialized, so IsActive here is exactly the enablement check.
+            if (!IsActive)
+            {
+                overlay.SetVisible(false);
+                return;
+            }
+
             // Only a diagnostics key, defaulting to None. No gameplay hotkeys: this ships to
             // the workshop and global keys just risk colliding with other mods.
-            if (cfgDumpKey.Value != Key.None)
+            Key dump = diagnosticsKey.Resolve(config.DumpKey);
+            if (dump != Key.None)
             {
-                bool down = IsPressed(cfgDumpKey.Value);
+                bool down = IsPressed(dump);
                 if (down && !prevDumpKey)
                 {
                     DumpDiagnostics();
@@ -199,7 +259,7 @@ namespace DolocTownQuestTracker
                 }
                 return;
             }
-            overlay.SetOffset(new Vector2(OffsetX, cfgOffsetY.Value));
+            overlay.SetOffset(new Vector2(OffsetX, config.OffsetY));
 
             // The tip text can only change when the snapshot is rebuilt or the watchlist is
             // edited, both of which set renderDirty. Reset it after TryBuild so nothing is
@@ -355,7 +415,7 @@ namespace DolocTownQuestTracker
             return ctrl != null && ctrl.isPressed;
         }
 
-        /// <summary>Support tool behind [Diagnostics] DumpKey. Off unless a key is assigned.</summary>
+        /// <summary>Support tool behind the DumpKey setting. Off unless a key is assigned.</summary>
         internal static void DumpDiagnostics()
         {
             try

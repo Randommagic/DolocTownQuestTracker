@@ -1,3 +1,4 @@
+using System;
 using DolocTown;
 using DolocTown.UI;
 using UnityEngine;
@@ -19,7 +20,10 @@ namespace DolocTownQuestTracker
     /// </summary>
     internal static class ToggleWidget
     {
+        private const string AssetName = "UI_ELEMENT_SETTING_TOGGLE";
+
         private static bool suppress;
+        private static bool reportedUnavailable;
 
         /// <summary>
         /// True while a switch is being set from code. The panel adapters check it so pushing
@@ -38,16 +42,29 @@ namespace DolocTownQuestTracker
                 return null;
             }
 
-            // CreateUiEntity instantiates and calls DolocUiObject.Init(), which is what wires
-            // toggle.onValueChanged and the knob animation; without it the switch is inert.
-            ToggleItemUI toggle = DolocUtils.CreateUiEntity<ToggleItemUI>(
-                DolocGameAssets.UI_ELEMENT_SETTING_TOGGLE, parent);
-            if (toggle == null)
+            // By name, not DolocGameAssets.UI_ELEMENT_SETTING_TOGGLE: enum members compile to
+            // their number, and game updates renumber this enum.
+            DolocGameAssets asset;
+            GameObject prefab = Enum.TryParse<DolocGameAssets>(AssetName, out asset)
+                ? DolocAPI.GetAsset<GameObject>(asset)
+                : null;
+
+            // Checked on the prefab before instantiating: CreateUiEntity instantiates first and
+            // only then looks for the component, so a wrong prefab would be left in the panel.
+            if (prefab == null || prefab.GetComponent<ToggleItemUI>() == null)
             {
-                Diag.Error("ToggleWidget: UI_ELEMENT_SETTING_TOGGLE unavailable or missing ToggleItemUI.");
+                // Once: the seed panel retries every slot on each open.
+                if (!reportedUnavailable)
+                {
+                    reportedUnavailable = true;
+                    Diag.Error("ToggleWidget: " + AssetName + " missing, unavailable or lacks ToggleItemUI.");
+                }
                 return null;
             }
 
+            // CreateUiEntity instantiates and calls DolocUiObject.Init(), which is what wires
+            // toggle.onValueChanged and the knob animation; without it the switch is inert.
+            ToggleItemUI toggle = DolocUtils.CreateUiEntity<ToggleItemUI>(asset, parent);
             GameObject go = toggle.gameObject;
             go.name = name;
 

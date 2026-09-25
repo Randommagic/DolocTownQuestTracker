@@ -1,0 +1,13 @@
+{
+  "Name": "Doloc Quest Tracker",
+  "Author": "Randommagic",
+  "Version": "1.0.1",
+  "Description": "Shows the items needed for faction missions and seed research, below the game's built-in quest display. Requires DTMAPI.",
+  "UniqueID": "Randommagic.DolocTownQuestTracker",
+  "EntryDll": "Content/DTMAPI/DolocTownQuestTracker.dll",
+  "EntryType": "DolocTownQuestTracker.ModEntry",
+  "MinimumDTMApiVersion": "0.6.0",
+  "Type": "CodeMod",
+  "Dependencies": [],
+  "UpdateKeys": []
+}
