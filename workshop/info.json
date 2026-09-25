@@ -1,7 +1,7 @@
 {
   "name": "Doloc Quest Tracker",
   "author": "Randommagic",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Shows the items needed for faction missions and seed research, below the game's built-in quest display. Requires DTMAPI.",
   "tags": [
     "*Functional Mod"
